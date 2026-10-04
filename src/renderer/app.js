@@ -18,6 +18,9 @@ let skillsState = null;        // { plugins, skills, enabledPlugins, enabledSkil
 let skillQuery = '';           // skills tab search
 let appInfo = null;            // { version, dataDir, … } for the Settings tab
 let settingsSaveTimer = null;
+let agentState = null;          // agent:info — tools on/off, workspace, catalogue
+let toolsOn = false;            // per-chat: may the assistant use tools this turn?
+let pendingTool = null;         // the permission request currently on screen
 
 /* ================================================================== */
 /* Boot                                                               */
@@ -41,6 +44,7 @@ async function boot() {
   bindBotToolbar();
   bindSkills();
   bindProviderSearch();
+  bindAgent();
   nexus.onBotChanged(() => loadBots());
   await refreshConversations();
   renderMessages();
@@ -51,6 +55,7 @@ async function boot() {
   maybeShowIntro(() => maybeShowBackgroundPrompt());
   await loadBots();
   await loadSkills();
+  loadAgent();
   nexus.appInfo().then(info => { appInfo = info; renderSettings(); }).catch(() => {});
   setInterval(() => { if (document.hidden) return; if ($('#view-bots').classList.contains('active')) loadBots(true); }, 10000);
   await populateModels();
@@ -314,7 +319,7 @@ async function sendMessage(presetText) {
 
   let res;
   try {
-    res = await nexus.send({ conversationId: currentConvId, text, providerId, model });
+    res = await nexus.send({ conversationId: currentConvId, text, providerId, model, tools: toolsOn });
   } catch (e) {
     // IPC/serialization failure: never leave the composer stuck in streaming.
     setStreamingUI(false);
@@ -678,6 +683,227 @@ function bindSettings() {
     } else if (!r.canceled) {
       toast('Import failed: ' + (r.error || 'unknown'), 'error');
     }
+  });
+}
+
+/* ================================================================== */
+/* Assistant (tools): settings, permission prompt, activity rows       */
+/* ================================================================== */
+
+/**
+ * One tool call as a collapsible row in the conversation: what was called,
+ * how it ended, and the output if you want to read it. Built with DOM nodes
+ * and textContent — a file's contents end up in here.
+ */
+function toolMessageEl(m) {
+  const meta = (m && m.meta) || {};
+  const wrap = document.createElement('details');
+  wrap.className = 'msg tool';
+
+  const head = document.createElement('summary');
+  const name = document.createElement('span');
+  name.className = 'tool-name';
+  name.textContent = meta.tool || 'tool';
+  const state = document.createElement('span');
+  const ok = meta.ok === true;
+  const denied = meta.denied === true;
+  state.className = 'tool-state ' + (ok ? 'ok' : denied ? 'denied' : 'err');
+  state.textContent = ok ? 'done' : denied ? 'declined' : 'failed';
+  head.appendChild(name);
+  head.appendChild(state);
+  wrap.appendChild(head);
+
+  const pre = document.createElement('pre');
+  pre.className = 'tool-output';
+  pre.textContent = String(m.content || '');
+  wrap.appendChild(pre);
+
+  if (m.ts) {
+    const t = document.createElement('span');
+    t.className = 'msg-time';
+    t.textContent = new Date(m.ts).toLocaleTimeString();
+    wrap.appendChild(t);
+  }
+  return wrap;
+}
+
+async function loadAgent() {
+  try {
+    agentState = await nexus.agentInfo();
+  } catch {
+    agentState = null;
+  }
+  renderAgent();
+  updateToolsToggle();
+}
+
+function renderAgent() {
+  const a = agentState;
+  const pill = $('#agentPill');
+  if (!pill || !a) return;
+  const ready = a.enabled === true && a.workspaceOk === true;
+  pill.textContent = ready ? 'On' : (a.enabled ? 'Needs a folder' : 'Off');
+  pill.className = 'badge ' + (ready ? 'ok' : '');
+
+  const line = $('#agentWorkspaceLine');
+  if (line) {
+    line.textContent = a.workspace
+      ? (a.workspaceOk ? 'Workspace: ' + a.workspace : 'That folder is gone — choose another one.')
+      : 'No workspace chosen yet.';
+  }
+  const toggle = $('#agentToggleBtn');
+  if (toggle) toggle.textContent = a.enabled ? 'Turn tools off' : 'Turn tools on';
+  const reads = $('#agentReadsBtn');
+  if (reads) reads.textContent = 'Ask before reads: ' + (a.askBeforeReads ? 'on' : 'off');
+  const grants = $('#agentGrantsBtn');
+  if (grants) grants.textContent = 'Remember write approvals: ' + (a.allowSessionGrants ? 'on' : 'off');
+  const net = $('#agentNetBtn');
+  if (net) net.textContent = 'Network tools: ' + (a.allowNetwork ? 'on' : 'off');
+  const steps = $('#agentSteps');
+  if (steps) steps.value = String(a.maxSteps || 12);
+
+  const host = $('#agentToolList');
+  if (host && Array.isArray(a.catalog)) {
+    host.innerHTML = '';
+    const groups = [
+      ['read', 'Reads — run without asking, listed in the chat'],
+      ['write', 'Writes — ask every time (rememberable)'],
+      ['danger', 'Careful — ask every time, never remembered']
+    ];
+    for (const [risk, label] of groups) {
+      const tools = a.catalog.filter(t => t.risk === risk);
+      if (!tools.length) continue;
+      const lineEl = document.createElement('div');
+      lineEl.className = 'tool-catalog-row';
+      const head = document.createElement('span');
+      head.className = 'tool-catalog-head ' + risk;
+      head.textContent = label;
+      lineEl.appendChild(head);
+      const names = document.createElement('span');
+      names.className = 'tool-catalog-names';
+      names.textContent = tools.map(t => t.name).join(' · ');
+      lineEl.appendChild(names);
+      host.appendChild(lineEl);
+    }
+    if (a.grants && a.grants.length) {
+      const remembered = document.createElement('div');
+      remembered.className = 'tool-catalog-row';
+      remembered.textContent = 'Remembered for this session: ' + a.grants.join(', ');
+      host.appendChild(remembered);
+    }
+  }
+}
+
+function updateToolsToggle() {
+  const btn = $('#toolsToggleBtn');
+  if (!btn) return;
+  const ready = !!(agentState && agentState.enabled && agentState.workspaceOk);
+  btn.classList.toggle('hidden', !ready);
+  btn.textContent = toolsOn ? 'Tools on' : 'Tools off';
+  btn.classList.toggle('on', toolsOn);
+  btn.title = toolsOn
+    ? 'The assistant may use tools on the workspace — it still asks before anything changes.'
+    : 'Let the assistant use tools in this chat.';
+}
+
+/* ------------------------------------------------------------------ */
+/* Permission prompt — the only way a tool ever gets to run            */
+/* ------------------------------------------------------------------ */
+
+function showToolAsk(request) {
+  if (!request) return;
+  pendingTool = request;
+  const summary = $('#toolSummary');
+  const detail = $('#toolDetail');
+  const preview = $('#toolPreview');
+  const badge = $('#toolRiskBadge');
+  const always = $('#toolAlwaysBtn');
+  if (summary) summary.textContent = request.summary || request.name || '';
+  if (detail) detail.textContent = request.detail || '';
+  if (preview) preview.textContent = request.preview || '';
+  if (preview) preview.classList.toggle('hidden', !request.preview);
+  if (badge) {
+    badge.textContent = request.risk === 'danger'
+      ? 'careful — never remembered'
+      : (request.risk === 'write' ? 'changes files — asks every time' : 'reads');
+    badge.className = 'badge ' + (request.risk === 'danger' ? 'tool-danger' : (request.risk === 'write' ? 'tool-write' : 'tool-read'));
+  }
+  // "Allow for this session" only exists where remembering is safe.
+  if (always) always.classList.toggle('hidden', request.canRemember !== true);
+  const modal = $('#toolModal');
+  if (modal) modal.classList.remove('hidden');
+  const deny = $('#toolDenyBtn');
+  if (deny) deny.focus();
+}
+
+async function answerTool(decision) {
+  const request = pendingTool;
+  if (!request) return;
+  pendingTool = null;
+  const modal = $('#toolModal');
+  if (modal) modal.classList.add('hidden');
+  try {
+    await nexus.answerTool(request.id, decision);
+  } catch {
+    toast('Could not answer that prompt — treating it as denied.', 'error');
+  }
+}
+
+function bindAgent() {
+  nexus.onToolAsk(showToolAsk);
+  // Results are already persisted in the conversation; re-read and redraw.
+  nexus.onToolResult((p) => { if (p && p.conversationId === currentConvId) renderMessages(); });
+
+  const deny = $('#toolDenyBtn');
+  const allow = $('#toolAllowBtn');
+  const always = $('#toolAlwaysBtn');
+  if (deny) deny.addEventListener('click', () => answerTool('deny'));
+  if (allow) allow.addEventListener('click', () => answerTool('allow'));
+  if (always) always.addEventListener('click', () => answerTool('always'));
+  // Escape denies, like every other dialog in the app.
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && pendingTool) { e.preventDefault(); answerTool('deny'); }
+  });
+
+  const toggle = $('#toolsToggleBtn');
+  if (toggle) toggle.addEventListener('click', () => {
+    toolsOn = !toolsOn;
+    updateToolsToggle();
+    toast(toolsOn ? 'Tools on for this chat.' : 'Tools off for this chat.');
+  });
+
+  const save = async (patch) => {
+    await nexus.updateSettings({ agent: patch }).catch(() => {});
+    await loadAgent();
+  };
+  const on = $('#agentToggleBtn');
+  if (on) on.addEventListener('click', () => save({ enabled: !(agentState && agentState.enabled) }));
+  const ws = $('#agentWorkspaceBtn');
+  if (ws) ws.addEventListener('click', async () => {
+    const r = await nexus.setAgentWorkspace().catch(() => null);
+    if (!r) return;
+    if (r.canceled) return;
+    if (!r.ok) { toast(r.error || 'Could not use that folder.', 'error'); return; }
+    await loadAgent();
+    toast('Workspace: ' + (agentState && agentState.workspace));
+  });
+  const reads = $('#agentReadsBtn');
+  if (reads) reads.addEventListener('click', () => save({ askBeforeReads: !(agentState && agentState.askBeforeReads) }));
+  const grants = $('#agentGrantsBtn');
+  if (grants) grants.addEventListener('click', () => save({ allowSessionGrants: !(agentState && agentState.allowSessionGrants) }));
+  const net = $('#agentNetBtn');
+  if (net) net.addEventListener('click', () => save({ allowNetwork: !(agentState && agentState.allowNetwork) }));
+  const steps = $('#agentSteps');
+  if (steps) steps.addEventListener('change', () => {
+    const n = Math.max(1, Math.min(25, parseInt(steps.value, 10) || 12));
+    steps.value = String(n);
+    save({ maxSteps: n });
+  });
+  const clear = $('#agentClearBtn');
+  if (clear) clear.addEventListener('click', async () => {
+    const r = await nexus.clearAgentGrants().catch(() => null);
+    await loadAgent();
+    toast(r && r.cleared ? 'Forgot ' + r.cleared + ' remembered approval(s).' : 'Nothing was remembered.', 'ok');
   });
 }
 
@@ -1121,6 +1347,11 @@ function renderTurnMessages(box, messages) {
       chip.className = 'msg action';
       chip.textContent = m.content;
       box.appendChild(chip);
+      continue;
+    }
+    if (m.role === 'tool') {
+      // A tool call the assistant made, and what came back.
+      box.appendChild(toolMessageEl(m));
       continue;
     }
     const role = m.role === 'user' ? 'user' : 'assistant';
@@ -1724,6 +1955,23 @@ const HELP_TOPICS = [
       'Every provider’s base URL and model list are editable, so endpoints can be fixed without a new build.'
     ],
     footer: 'Pick a model in the composer, and refresh the list whenever a provider adds new ones.'
+  },
+  {
+    id: 'agent',
+    group: 'Assistant',
+    kicker: 'Tools on your machine',
+    title: 'Letting the assistant use tools',
+    lead: 'With tools on, the assistant can read and change files in one folder, run your commands, and — if you allow it — fetch a URL.',
+    bullets: [
+      'Turn tools on, then choose a workspace: exactly one folder. Every file tool stays inside it. ".." cannot climb out, and a symlink pointing elsewhere is refused.',
+      'Reads (read_file, list_dir, search_files, grep_files, file_info, diff_files, project_info, git_status/diff/log/show) run without a prompt and leave a row in the chat.',
+      'Writes (write_file, edit_file, multi_edit, append_file, create_dir, move_file, copy_file, git stage/commit/branch) always ask first, with the change shown before you answer.',
+      'Deletes, shell commands and network calls always ask too — and are never remembered, whatever you answer.',
+      '“Allow for this session” is only offered for file writes, and only for the folder it names. “Forget remembered approvals” clears the lot.',
+      'The Tools switch above the composer decides whether a chat may use them at all.',
+      'Tool output is text: nothing a file contains is ever executed.'
+    ],
+    footer: 'Tools stay off until you turn them on, and nothing is ever accepted automatically.'
   },
   {
     id: 'settings',

@@ -53,6 +53,15 @@ contextBridge.exposeInMainWorld('nexus', {
   botSend: (id, text) => ipcRenderer.invoke('bots:send', { id, text }),
   onBotChanged: cb => subscribe('bot:changed', cb),
 
+  /* agent: tools on this machine (permissions asked for, never auto-accepted) */
+  agentInfo: () => ipcRenderer.invoke('agent:info'),
+  setAgentWorkspace: () => ipcRenderer.invoke('agent:setWorkspace'),
+  clearAgentGrants: () => ipcRenderer.invoke('agent:clearGrants'),
+  answerTool: (id, decision, reason) => ipcRenderer.invoke('agent:allow', { id, decision, reason }),
+  onToolAsk: cb => subscribe('tool:ask', cb),
+  onToolPlan: cb => subscribe('tool:plan', cb),
+  onToolResult: cb => subscribe('tool:result', cb),
+
   /* data */
   openDataFolder: () => ipcRenderer.invoke('app:dataFolder'),
   exportData: () => ipcRenderer.invoke('app:export'),

@@ -46,6 +46,7 @@
           <div class="composer-foot">
             <div class="composer-hint"><span>Enter to send</span><span>Shift+Enter for newline</span></div>
             <div class="composer-actions">
+              <button id="toolsToggleBtn" class="ghost hidden" title="Let the assistant use tools on the workspace">Tools off</button>
               <button id="regenBtn" class="ghost hidden" title="Regenerate last response"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v6h6"/></svg></span>Regenerate</button>
               <button id="stopBtn" class="danger hidden"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span>Stop</button>
               <button id="sendBtn" class="primary">Send</button>
@@ -141,6 +142,7 @@
           <a href="#sec-generation">Generation</a>
           <a href="#sec-appearance">Appearance</a>
           <a href="#sec-background">Background</a>
+          <a href="#sec-agent">Assistant</a>
           <a href="#sec-data">Data</a>
         </nav>
         <div class="card panel" id="sec-generation">
@@ -168,6 +170,27 @@
             <span id="bgStatus" class="muted"></span>
           </div>
         </div>
+        <div class="card panel" id="sec-agent">
+          <div class="panel-head"><h2>Assistant &amp; tools</h2><span class="panel-head-side"><span id="agentPill" class="badge">Off</span><button type="button" class="help-btn" data-help="agent" title="Letting the assistant use tools" aria-label="Letting the assistant use tools">?</button></span></div>
+          <p class="muted">Let the assistant read, search and change files in one folder on this PC, run your commands and — if you switch it on — fetch a URL. It can only ever work inside that folder.</p>
+          <div class="row">
+            <button id="agentToggleBtn" class="ghost">Turn tools on</button>
+            <button id="agentWorkspaceBtn" class="ghost">Choose workspace…</button>
+          </div>
+          <p class="muted" id="agentWorkspaceLine">No workspace chosen yet.</p>
+          <div class="row">
+            <button id="agentReadsBtn" class="ghost">Ask before reads: off</button>
+            <button id="agentGrantsBtn" class="ghost">Remember write approvals: on</button>
+            <button id="agentNetBtn" class="ghost">Network tools: off</button>
+          </div>
+          <div class="row">
+            <label for="agentSteps" class="inline">Max tool steps per message</label>
+            <input id="agentSteps" type="number" min="1" max="25" style="width:90px">
+            <button id="agentClearBtn" class="ghost">Forget remembered approvals</button>
+          </div>
+          <p class="muted small" id="agentPolicyLine">Writing, deleting, running a command and fetching a URL always ask you first. Nothing is accepted automatically, and destructive actions are never remembered.</p>
+          <div id="agentToolList" class="tool-catalog"></div>
+        </div>
         <div class="card panel" id="sec-data">
           <div class="panel-head"><h2>Data</h2><span class="panel-head-side"><span class="muted small">Portable</span><button type="button" class="help-btn" data-help="data" title="Your data, backups and reset" aria-label="Your data, backups and reset">?</button></span></div>
           <div class="row">
@@ -187,6 +210,23 @@
   </main>
 
   <div id="toasts" aria-live="polite" role="status"></div>
+  <div id="toolModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="toolModalTitle">
+    <div class="modal tool-modal">
+      <div class="modal-head">
+        <h2 id="toolModalTitle">The assistant wants to act on your machine</h2>
+        <span id="toolRiskBadge" class="badge">write</span>
+      </div>
+      <p id="toolSummary" class="tool-summary"></p>
+      <p id="toolDetail" class="muted small"></p>
+      <pre id="toolPreview" class="tool-preview"></pre>
+      <p class="muted small">Nothing happens until you answer. Deletions, shell commands and network calls are never remembered, however you answer here.</p>
+      <div class="row">
+        <button id="toolDenyBtn" class="danger">Deny</button>
+        <button id="toolAllowBtn" class="primary">Allow once</button>
+        <button id="toolAlwaysBtn" class="ghost">Allow for this session</button>
+      </div>
+    </div>
+  </div>
   <div id="botModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="botModalTitle">
     <div class="modal">
       <div class="modal-head">

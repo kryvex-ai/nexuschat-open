@@ -124,14 +124,37 @@ async function attach(wsUrl) {
       appearance: !!g('sec-appearance'),
       background: !!g('sec-background'),
       data: !!g('sec-data'),
+      agent: !!g('sec-agent'),
       mode: !!g('sec-mode'),
       ssh: !!g('sec-ssh')
     });
   })()`));
   check('the settings panels are there',
-    settings.generation && settings.appearance && settings.background && settings.data, JSON.stringify(settings));
+    settings.generation && settings.appearance && settings.background && settings.data && settings.agent,
+    JSON.stringify(settings));
   check('no mode switch survives', settings.mode === false);
   check('no SSH panel survives', settings.ssh === false);
+
+  // The assistant's own UI: the workspace panel and the permission prompt.
+  const agentUi = JSON.parse(await client.evaluate(`(() => {
+    const g = (id) => document.getElementById(id);
+    const modal = g('toolModal');
+    return JSON.stringify({
+      panel: !!g('sec-agent'),
+      workspace: !!g('agentWorkspaceBtn'),
+      steps: !!g('agentSteps'),
+      catalogue: !!g('agentToolList'),
+      toggle: !!g('toolsToggleBtn'),
+      modalHiddenAtBoot: modal ? modal.classList.contains('hidden') : false,
+      deny: !!g('toolDenyBtn'),
+      allow: !!g('toolAllowBtn'),
+      always: !!g('toolAlwaysBtn')
+    });
+  })()`));
+  check('the assistant panel is mounted', agentUi.panel && agentUi.workspace && agentUi.steps && agentUi.catalogue, JSON.stringify(agentUi));
+  check('the permission prompt exists and starts hidden',
+    agentUi.deny && agentUi.allow && agentUi.always && agentUi.modalHiddenAtBoot, JSON.stringify(agentUi));
+  check('the composer carries the tools switch', agentUi.toggle === true);
 
   // State: local-only shape, full provider list.
   const state = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.getState()))()`));
@@ -164,6 +187,19 @@ async function attach(wsUrl) {
   const bots = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.listBots()))()`));
   check('bots:list answers', bots && bots.ok === true && Array.isArray(bots.bots),
     JSON.stringify(bots).slice(0, 60));
+
+  // The agent surface answers over IPC too, and it starts switched off.
+  const agent = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.agentInfo()))()`));
+  check('agent:info answers', !!agent && typeof agent.enabled === 'boolean', JSON.stringify(agent).slice(0, 60));
+  check('tools are off until asked for', agent.enabled === false, 'enabled=' + agent.enabled);
+  check('the toolset is the full one', Array.isArray(agent.catalog) && agent.catalog.length >= 20,
+    (agent.catalog || []).length + ' tools');
+  check('the risky tools ask every time',
+    (agent.catalog || []).filter(t => t.needsAsk).length >= 10 &&
+    (agent.catalog || []).filter(t => t.risk === 'danger' && t.needsAsk).every(t => t.risk === 'danger'),
+    (agent.catalog || []).filter(t => t.risk === 'danger').map(t => t.name).join(', '));
+  const grants = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.clearAgentGrants()))()`));
+  check('agent:clearGrants answers', grants && grants.ok === true, JSON.stringify(grants));
 
   await sleep(200);
   check('nothing threw in the renderer', crashes.length === 0, crashes.join(' | '));

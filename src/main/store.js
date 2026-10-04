@@ -46,8 +46,42 @@ function defaultSettings() {
     introDone: false,           // first-launch onboarding overlay
     enabledPlugins: [],         // skill packs with every skill switched on
     enabledSkills: [],          // individually switched-on skills (beyond packs)
-    providerConfigs: {}         // id -> { enabled, apiKey(encrypted), baseUrl, models[] }
+    providerConfigs: {},        // id -> { enabled, apiKey(encrypted), baseUrl, models[] }
+    agent: defaultAgentSettings()
   };
+}
+
+/**
+ * The agent (tool) layer, all off or all safe by default: nothing runs until
+ * the user turns it on, picks a workspace, and answers the prompts.
+ */
+function defaultAgentSettings() {
+  return {
+    enabled: false,
+    workspace: null,            // absolute path; null = not chosen yet
+    askBeforeReads: false,      // reads are logged, not asked — turn on to ask for those too
+    allowSessionGrants: true,   // "allow for this session" on write tools
+    allowNetwork: false,        // http_fetch stays off until asked for
+    maxSteps: 12                // tool rounds per message (1..25)
+  };
+}
+
+/** Merge an agent patch, ignoring anything of the wrong type or out of range. */
+function agentSettings(patch = {}) {
+  const out = {};
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return out;
+  for (const k of ['enabled', 'askBeforeReads', 'allowSessionGrants', 'allowNetwork']) {
+    if (k in patch && typeof patch[k] === 'boolean') out[k] = patch[k];
+  }
+  if ('workspace' in patch) {
+    const w = patch.workspace == null || patch.workspace === '' ? null : String(patch.workspace).slice(0, 1024);
+    out.workspace = w;
+  }
+  if ('maxSteps' in patch) {
+    const n = Math.floor(Number(patch.maxSteps));
+    if (Number.isFinite(n)) out.maxSteps = Math.min(25, Math.max(1, n));
+  }
+  return out;
 }
 
 /**
@@ -121,7 +155,7 @@ class Store {
   getSettings() { return { ...this.settings, providerConfigs: undefined }; }
 
   updateSettings(patch = {}) {
-    const allowed = ['theme', 'temperature', 'maxTokens', 'systemPrompt', 'activeChatModel', 'runInBackground', 'introDone', 'enabledPlugins', 'enabledSkills'];
+    const allowed = ['theme', 'temperature', 'maxTokens', 'systemPrompt', 'activeChatModel', 'runInBackground', 'introDone', 'enabledPlugins', 'enabledSkills', 'agent'];
     const clean = {};
     for (const k of allowed) {
       if (!(k in patch)) continue;
@@ -129,6 +163,10 @@ class Store {
       switch (k) {
         case 'theme':
           if (v === 'dark' || v === 'light') clean[k] = v;
+          break;
+        case 'agent':
+          // Merged, not replaced: a partial patch must not wipe the workspace.
+          clean[k] = { ...defaultAgentSettings(), ...(this.settings.agent || {}), ...agentSettings(v) };
           break;
         case 'enabledPlugins':
           clean[k] = validPluginIds(v);
@@ -248,7 +286,7 @@ class Store {
   updateConversation(id, patch) {
     const conv = this.getConversation(id);
     if (!conv) return null;
-    for (const k of ['title', 'providerId', 'model']) if (k in patch) conv[k] = patch[k];
+    for (const k of ['title', 'providerId', 'model', 'tools']) if (k in patch) conv[k] = patch[k];
     conv.updatedAt = new Date().toISOString();
     this.saveConversations();
     return conv;
@@ -326,4 +364,4 @@ function sanitizeImportedConversation(c) {
   };
 }
 
-module.exports = { Store, PLAIN, defaultSettings, sanitizeImportedConversation, validPluginIds };
+module.exports = { Store, PLAIN, defaultSettings, defaultAgentSettings, agentSettings, sanitizeImportedConversation, validPluginIds };

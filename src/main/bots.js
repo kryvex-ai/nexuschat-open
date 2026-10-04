@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { validSkillIds, SKILL_ACTIVE_MAX } = require('../shared/skills');
+const { extractDirectives, neutralizeDirectives } = require('../shared/directives');
 
 const BOT_NAME_MAX = 64;
 const BOT_TASK_MAX = 2000;
@@ -39,10 +40,9 @@ function uid(prefix) {
   return prefix + crypto.randomUUID();
 }
 
-// Neutralize directive smuggling: "[[bot" can't survive in names/tasks.
-function neutralizeDirectives(s) {
-  return String(s || '').replace(/\[\[/g, '[ [');
-}
+/* The directive scanner and the neutralizer now live in shared/directives.js —
+ * the tool layer parses the same shape, so there is one implementation and
+ * one set of tests for it. */
 
 // Escape untrusted text for LLM prompts (prevents tag breakout).
 function escContent(s) {
@@ -129,71 +129,6 @@ function buildBotSystem(bot, nowStr, skillPrompt) {
   );
 }
 
-/* Brace-matching directive scanner: handles [ ] inside JSON strings. */
-function extractDirectives(text, kind) {
-  const raw = String(text || '');
-  const actions = [];
-  let out = '';
-  let i = 0;
-  const open = '[[' + kind;
-  while (i < raw.length) {
-    const start = raw.indexOf(open, i);
-    if (start === -1) { out += raw.slice(i); break; }
-    const j = start + open.length;
-    const nxt = raw[j];
-    if (nxt !== undefined && nxt !== '{' && !/\s/.test(nxt)) {
-      out += raw.slice(i, j);
-      i = j;
-      continue;
-    }
-    let k = j;
-    while (k < raw.length && /\s/.test(raw[k])) k++;
-    if (raw[k] !== '{') {
-      out += raw.slice(i, j);
-      i = j;
-      continue;
-    }
-    let depth = 0, inStr = false, esc = false, end = -1;
-    for (let p = k; p < raw.length; p++) {
-      const ch = raw[p];
-      if (inStr) {
-        if (esc) esc = false;
-        else if (ch === '\\') esc = true;
-        else if (ch === '"') inStr = false;
-      } else if (ch === '"') inStr = true;
-      else if (ch === '{') depth++;
-      else if (ch === '}') {
-        depth--;
-        if (depth === 0) { end = p; break; }
-      }
-    }
-    if (end === -1) {
-      out += raw.slice(i, j);
-      i = j;
-      continue;
-    }
-    let m = end + 1;
-    while (m < raw.length && /\s/.test(raw[m])) m++;
-    if (raw.slice(m, m + 2) !== ']]') {
-      out += raw.slice(i, j);
-      i = j;
-      continue;
-    }
-    try {
-      const a = JSON.parse(raw.slice(k, end + 1));
-      if (a && typeof a === 'object' && !Array.isArray(a) && typeof a.action === 'string') {
-        out += raw.slice(i, start);
-        actions.push(a);
-        i = m + 2;
-        continue;
-      }
-    } catch { /* keep malformed visible */ }
-    out += raw.slice(i, j);
-    i = j;
-  }
-  return { text: out.replace(/[ \t]+\n/g, '\n').trim(), actions };
-}
-
 /** Human label for an interval in seconds (e.g. 1800 -> "every 30 min"). */
 function formatInterval(sec) {
   sec = Number(sec);
@@ -233,7 +168,7 @@ function buildBotChatSystem(bot, nowStr, skillPrompt) {
  * Returns { text: reply without directive lines, actions: [parsed objects] }.
  */
 function parseBotDirectives(text) {
-  return extractDirectives(text, 'bot');
+  return extractDirectives(text, 'bot', a => typeof a.action === 'string');
 }
 
 /**

@@ -40,6 +40,11 @@ the app itself ships **zero runtime dependencies**.
   side only is the bug we most want to catch.
 - **Renderer code may not touch the file system or the network directly.** Everything
   goes through the bridge; the renderer runs with context isolation on and Node off.
+- **Tools ask, every time.** A tool declares its risk class in `src/shared/tools.js`.
+  Anything that writes, deletes, runs a command or uses the network is `danger`,
+  asks on every call and is never remembered. Do not add an auto-accept switch, and
+  do not weaken the workspace confinement in `src/main/tools/paths.js`: a new tool
+  must resolve its paths through it.
 - **Comments explain *why*.** Especially where a workaround exists for a specific
   runtime or library version — name the version, so the next person can check whether
   it still applies.

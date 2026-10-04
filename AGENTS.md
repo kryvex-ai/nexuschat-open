@@ -41,17 +41,34 @@ the setuid sandbox and puts the window on `xvfb-run`. It backs the `smoke` and
 ```
 src/main/       Electron main: ipc.js (every channel), store.js (settings +
                 chats persistence), bots.js (validation, BotStore, BotRunner
-                scheduler), providers/ (HTTP transport per provider kind),
-                secure.js (safeStorage adapter for keys at rest)
+                scheduler), agent.js (the tool loop), providers/ (HTTP
+                transport per provider kind), tools/ (executors, the
+                permission gate, workspace confinement), secure.js
+                (safeStorage adapter for keys at rest)
 src/preload.js  the nexus.* bridge — one function per channel, nothing else
 src/renderer/   app.js (all UI), index.html, theme.css
 src/shared/     brand.js (rename the app here), providers.js (registry),
-                skills.js (prompt-level skill registry + composer)
+                skills.js (prompt-level skill registry + composer),
+                tools.js (the tool registry — names, args, risk classes),
+                directives.js (the [[tool …]] / [[bot …]] scanner)
 scripts/        run-linux.sh (headless), ui-check.js (live UI over CDP),
                 gen-icon.js
 tests/          node --test; pure modules are exercised directly, the
-                renderer contract is asserted as text plus a DOM-stub run
+                renderer contract is asserted as text plus a DOM-stub run,
+                and tests/agent*.test.js cover the tool layer
 ```
+
+## The tool layer, in one paragraph
+
+The model asks for a tool by writing one `[[tool {…}]]` directive line in its
+reply; `src/shared/directives.js` pulls those out, `src/shared/tools.js` checks
+the name and every argument against the registry, `src/main/tools/permissions.js`
+decides whether to ask the user, and only then does an executor in
+`src/main/tools/` touch anything. `src/main/agent.js` loops: result back into the
+prompt, model decides the next step, up to the step cap. Two invariants are worth
+keeping in mind when you touch it: **dangerous tools are never remembered**, and
+**tool results are neutralized before they go back into a prompt**, so a file
+cannot smuggle a directive into the model.
 
 Adding a feature usually means all four layers: main logic (preferably a pure
 module with unit tests), the IPC channel in `ipc.js`, the preload bridge, and the

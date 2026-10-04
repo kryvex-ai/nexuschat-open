@@ -13,6 +13,9 @@ const sanitizeError = (e) => {
   return (out instanceof Error || (out && typeof out.message === 'string')) ? String(out.message) : String(out);
 };
 const { BotStore, BotRunner, validateBotInput, buildBotChatMessages, parseBotDirectives, applyBotDirectives, publicBot } = require('./bots');
+const { ToolHost, PermissionGate, DECISION, catalog } = require('./tools');
+const { runAgentTurn } = require('./agent');
+const { realRoot } = require('./tools/paths');
 const fs = require('node:fs');
 
 // Generic chat line persisted on failure (never raw provider errors).
@@ -31,6 +34,74 @@ function initIpc(store) {
     const win = BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   };
+
+  /* ---------------- agent: tools on this machine ---------------- */
+  /* One permission gate for the whole session, so "allow for this session"
+   * actually lasts; its rules are re-read from settings on every turn. The
+   * pending-prompt map is what lets a renderer button answer a question the
+   * main process is blocked on. */
+
+  const pendingAsks = new Map();
+  const auditLog = [];
+  const gate = new PermissionGate({ ask: (request) => askPermission(request), log: auditLog });
+
+  function askPermission(request) {
+    return new Promise((resolve) => {
+      pendingAsks.set(request.id, resolve);
+      emit('tool:ask', request);
+    });
+  }
+
+  /** Answer everything outstanding as "no" — called when the chat is stopped. */
+  function denyAllPending(reason) {
+    for (const resolve of pendingAsks.values()) resolve({ decision: DECISION.DENY, reason });
+    pendingAsks.clear();
+  }
+  // Closing the app must not leave a prompt hanging forever.
+  app.on('before-quit', () => denyAllPending('The app is closing.'));
+
+  function agentSettingsNow() {
+    return store.getSettings().agent || {};
+  }
+
+  function toolHost() {
+    const a = agentSettingsNow();
+    gate.askBeforeReads = a.askBeforeReads === true;
+    gate.allowSessionGrants = a.allowSessionGrants !== false;
+    return new ToolHost({
+      root: a.workspace ? realRoot(a.workspace) : null,
+      gate,
+      // The one network tool stays off until the user switches it on in
+      // Settings; everything else is allowed by class, not individually.
+      enabled: (tool) => !(tool.name === 'http_fetch' && a.allowNetwork !== true)
+    });
+  }
+
+  function agentInfo() {
+    const a = agentSettingsNow();
+    return {
+      enabled: a.enabled === true,
+      workspace: a.workspace || null,
+      workspaceOk: !!(a.workspace && realRoot(a.workspace)),
+      askBeforeReads: a.askBeforeReads === true,
+      allowSessionGrants: a.allowSessionGrants !== false,
+      allowNetwork: a.allowNetwork === true,
+      maxSteps: a.maxSteps || 12,
+      pending: pendingAsks.size,
+      grants: gate.listGrants(),
+      catalog: catalog(),
+      recent: auditLog.slice(-50)
+    };
+  }
+
+  /** Tools are on for a turn when the chat asks for them, or the default is on. */
+  function toolsWantedFor(payload, conv) {
+    const a = agentSettingsNow();
+    if (!a.enabled || !a.workspace || !realRoot(a.workspace)) return false;
+    if (typeof payload.tools === 'boolean') return payload.tools;
+    if (conv && typeof conv.tools === 'boolean') return conv.tools;
+    return true;
+  }
 
   /* ---------------- app state ---------------- */
 
@@ -204,7 +275,45 @@ function initIpc(store) {
     active = { conversationId: conv.id, abort, gen };
     emit('chat:begin', { conversationId: conv.id });
 
+    const toolsOn = toolsWantedFor(payload, conv);
+    if (typeof payload.tools === 'boolean') store.updateConversation(conv.id, { tools: payload.tools });
+
     (async () => {
+      // Agent turn: the model may ask for tools, get permission, and go round
+      // again with the results. Everything about that loop lives in agent.js;
+      // this is just the wiring.
+      if (toolsOn) {
+        try {
+          await runAgentTurn({
+            store,
+            host: toolHost(),
+            conversationId: conv.id,
+            basePrompt: system,
+            temperature: settings.temperature,
+            maxTokens: settings.maxTokens || undefined,
+            maxSteps: agentSettingsNow().maxSteps,
+            signal: abort.signal,
+            isCurrent,
+            emit,
+            streamText: (req) => streamChat(provider, pcfg, {
+              messages: req.messages,
+              model: useModel,
+              temperature: settings.temperature,
+              maxTokens: settings.maxTokens || undefined,
+              signal: req.signal
+            })
+          });
+          if (isCurrent()) store.updateConversation(conv.id, { providerId, model: useModel });
+        } catch (err) {
+          console.error(err);
+          emit('chat:error', { conversationId: conv.id, message: sanitizeError(err) });
+        } finally {
+          denyAllPending('The chat was stopped.');
+          if (isCurrent()) active = null;
+        }
+        return;
+      }
+
       let acc = '';
       try {
         for await (const delta of streamChat(provider, pcfg, {
@@ -251,9 +360,41 @@ function initIpc(store) {
       // goes false) and the next send is not wrongly rejected.
       generation++;
       active = null;
+      // Any permission prompt the user never answered is a "no".
+      denyAllPending('The user stopped the reply.');
       return true;
     }
     return false;
+  });
+
+  /* ---------------- agent settings ---------------- */
+
+  ipcMain.handle('agent:info', () => agentInfo());
+
+  ipcMain.handle('agent:setWorkspace', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Choose the folder the assistant may work in',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { ok: false, canceled: true };
+    const root = realRoot(filePaths[0]);
+    if (!root) return { ok: false, error: 'That folder cannot be used as a workspace.' };
+    store.updateSettings({ agent: { workspace: root } });
+    return { ok: true, info: agentInfo() };
+  });
+
+  ipcMain.handle('agent:clearGrants', () => ({ ok: true, cleared: gate.clearGrants() }));
+
+  ipcMain.handle('agent:allow', (_e, { id, decision, reason } = {}) => {
+    const key = String(id || '');
+    const resolve = pendingAsks.get(key);
+    if (!resolve) return { ok: false, error: 'That request has already been answered or cancelled.' };
+    pendingAsks.delete(key);
+    resolve({
+      decision: decision === DECISION.ALLOW || decision === DECISION.ALWAYS ? decision : DECISION.DENY,
+      reason: reason ? String(reason).slice(0, 200) : undefined
+    });
+    return { ok: true };
   });
 
   /* ---------------- bots (local background task runners) ---------------- */
@@ -492,7 +633,7 @@ function initIpc(store) {
     }
   });
 
-  return { botStore, botRunner };
+  return { botStore, botRunner, agent: { denyAllPending, info: agentInfo } };
 }
 
 module.exports = { initIpc };
