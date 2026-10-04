@@ -1,0 +1,11 @@
+node_modules
+dist/
+out/
+.electron-deps/
+*.log
+nohup.out
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.tmp-*

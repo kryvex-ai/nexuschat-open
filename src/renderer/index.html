@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>NexusChat Open</title>
+  <link rel="stylesheet" href="theme.css" />
+</head>
+<body>
+  <header id="tabbar">
+    <div class="brand">
+      <span class="logo"></span>
+      <span id="brandName">NexusChat Open</span>
+    </div>
+    <nav id="tabs">
+      <button class="tab active" data-tab="chat"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>Chat</button>
+      <button class="tab" data-tab="bots"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><path d="M8 4h8"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg></span>Bots</button>
+      <button class="tab" data-tab="skills"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.2 5.3 5.8.5-4.4 3.8 1.3 5.7L12 15.4l-4.9 2.9 1.3-5.7L4 8.8l5.8-.5z"/></svg></span>Skills</button>
+      <button class="tab" data-tab="providers"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg></span>Providers</button>
+            <button class="tab" data-tab="settings"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
+    </nav>
+    <button id="helpBtn" class="help-chip" type="button" data-help="welcome" title="Guide &amp; help (F1)" aria-label="Open the guide and help window">
+      <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><path d="M12 17h.01"/></svg></span>Help
+    </button>
+  </header>
+
+  <main>
+    <!-- CHAT -->
+    <section id="view-chat" class="view active">
+      <aside id="sidebar">
+        <button id="newChatBtn" class="primary block"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New chat</button>
+        <div id="convList"></div>
+      </aside>
+      <section id="chatPane">
+        <div id="chatHeader">
+          <span id="chatStatus" class="muted"></span>
+          <button type="button" class="help-btn" data-help="chat" title="Chat and models" aria-label="Chat and models">?</button>
+        </div>
+        <div id="messages"></div>
+        <div id="composer">
+          <div class="composer-top">
+            <select id="modelSelect"></select>
+            <button id="refreshModelsBtn" class="ghost" title="Refresh model lists" aria-label="Refresh model lists"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span></button>
+          </div>
+          <textarea id="input" rows="1" placeholder="Message NexusChat Open…"></textarea>
+          <div class="composer-foot">
+            <div class="composer-hint"><span>Enter to send</span><span>Shift+Enter for newline</span></div>
+            <div class="composer-actions">
+              <button id="regenBtn" class="ghost hidden" title="Regenerate last response"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v6h6"/></svg></span>Regenerate</button>
+              <button id="stopBtn" class="danger hidden"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span>Stop</button>
+              <button id="sendBtn" class="primary">Send</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- BOTS -->
+    <section id="view-bots" class="view">
+      <aside id="botSidebar">
+        <div id="botSidebarHead">
+          <span class="sidebar-label">BOTS <span id="botCountLabel" class="muted"></span></span>
+          <button id="newBotBtn" class="icon-btn" title="New bot" aria-label="New bot"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        </div>
+        <div class="bot-toolbar">
+          <input id="botSearch" class="bot-search" type="search" placeholder="Search workers…" aria-label="Search bots">
+          <div id="botFilters" class="bot-filters" role="group" aria-label="Filter bots"></div>
+        </div>
+        <div id="botList"></div>
+        <div class="sidebar-foot"><button type="button" class="help-link" data-help="bots">How bots work</button></div>
+      </aside>
+      <section id="botPane">
+        <div id="botTaskLine" class="hidden"></div>
+        <div id="botMessages"></div>
+        <div id="botComposer" class="hidden">
+          <textarea id="botInput" rows="1" placeholder="Tell your bot what to do — “run every 30 min”, “pause until Monday”, “do it now”… (Enter to send)"></textarea>
+          <div class="composer-actions">
+            <button id="botSendBtn" class="primary">Send</button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- SKILLS -->
+    <section id="view-skills" class="view">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1>Skills &amp; plugins</h1>
+            <p class="muted">Shape how every model answers — enable a pack, or switch single skills on.</p>
+          </div>
+          <div class="page-head-side">
+            <input id="skillSearch" type="search" placeholder="Search skills…" aria-label="Search skills">
+            <button type="button" class="help-btn" data-help="skills" title="How skills work" aria-label="How skills work">?</button>
+          </div>
+        </div>
+        <div class="row">
+          <span id="skillsSummary" class="muted"></span>
+          <span id="skillsSaved" class="save-pill">Saved</span>
+        </div>
+        <h2>Plugins</h2>
+        <div id="pluginGrid" class="plugin-grid"></div>
+        <h2>All skills</h2>
+        <div id="skillList" class="skill-grid"></div>
+        <p class="muted small" id="skillsNote"></p>
+      </div>
+    </section>
+
+    <!-- PROVIDERS -->
+    <section id="view-providers" class="view">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1>Providers</h1>
+            <p class="muted">Bring your own key — chats and bots call the provider straight from this PC. Nothing routes through us.</p>
+          </div>
+          <div class="page-head-side">
+            <input id="providerSearch" type="text" placeholder="Search providers…" aria-label="Search providers">
+            <button type="button" class="help-btn" data-help="providers" title="Providers and your keys" aria-label="Providers and your keys">?</button>
+          </div>
+        </div>
+        <div id="providerSummary" class="muted"></div>
+        <div id="providerCards"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1>Settings</h1>
+            <p class="muted">Everything saves the moment you change it.</p>
+          </div>
+          <div class="page-head-side">
+            <span id="settingsSaved" class="save-pill">Saved</span>
+            <button type="button" class="help-btn" data-help="settings" title="What each section does" aria-label="What each settings section does">?</button>
+          </div>
+        </div>
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#sec-generation">Generation</a>
+          <a href="#sec-appearance">Appearance</a>
+          <a href="#sec-background">Background</a>
+          <a href="#sec-data">Data</a>
+        </nav>
+        <div class="card panel" id="sec-generation">
+          <div class="panel-head"><h2>Generation</h2><span class="panel-head-side"><span class="muted small">Model behaviour</span><button type="button" class="help-btn" data-help="generation" title="System prompt, temperature and tokens" aria-label="System prompt, temperature and tokens">?</button></span></div>
+          <label>Default system prompt</label>
+          <textarea id="systemPrompt" rows="3" placeholder="You are a helpful assistant."></textarea>
+          <label>Temperature: <span id="tempVal">0.7</span></label>
+          <input id="tempSlider" type="range" min="0" max="2" step="0.1">
+          <label>Max tokens (blank = provider default)</label>
+          <input id="maxTokens" type="number" min="1" placeholder="auto">
+        </div>
+        <div class="card panel" id="sec-appearance">
+          <div class="panel-head"><h2>Appearance</h2><span class="muted small">Theme</span></div>
+          <label>Theme</label>
+          <select id="themeSelect">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <div class="card panel" id="sec-background">
+          <div class="panel-head"><h2>Background</h2><span class="panel-head-side"><span id="bgPill" class="badge">Off</span><button type="button" class="help-btn" data-help="background" title="Running in the background" aria-label="Running in the background">?</button></span></div>
+          <div class="row">
+            <button id="bgOnBtn" class="ghost">Run in background</button>
+            <button id="bgOffBtn" class="ghost">Quit on close</button>
+            <span id="bgStatus" class="muted"></span>
+          </div>
+        </div>
+        <div class="card panel" id="sec-data">
+          <div class="panel-head"><h2>Data</h2><span class="panel-head-side"><span class="muted small">Portable</span><button type="button" class="help-btn" data-help="data" title="Your data, backups and reset" aria-label="Your data, backups and reset">?</button></span></div>
+          <div class="row">
+            <button id="openDataBtn" class="ghost">Open data folder</button>
+            <button id="exportBtn" class="ghost">Export chats</button>
+            <button id="importBtn" class="ghost">Import chats</button>
+          </div>
+          <p class="muted" id="dataPathLine"></p>
+          <div class="row">
+            <button id="resetSettingsBtn" class="danger">Restore default settings</button>
+            <span id="resetStatus" class="muted small"></span>
+          </div>
+          <p class="muted" id="aboutLine"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toasts" aria-live="polite" role="status"></div>
+  <div id="botModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="botModalTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="botModalTitle">New bot</h2>
+        <button type="button" class="help-btn" data-help="bot-form" title="How bots work" aria-label="How bots work">?</button>
+      </div>
+      <p class="muted">Name it, give it a task, choose when it runs.</p>
+      <label for="botName">Bot name</label>
+      <input id="botName" type="text" maxlength="64" placeholder="e.g. Morning briefing">
+      <label for="botTask">Task — what should it do on every run?</label>
+      <textarea id="botTask" rows="3" maxlength="2000" placeholder="e.g. Summarize today's calendar and remind me of the 3 most important things. Be brief."></textarea>
+      <div class="row">
+        <div style="flex:1;min-width:150px"><label for="botProvider">Provider</label><select id="botProvider"></select></div>
+      </div>
+      <div class="row">
+        <div style="flex:1;min-width:150px"><label for="botModel">Model</label><select id="botModel"></select></div>
+        <div style="flex:1;min-width:150px"><label for="botInterval">Repeat every</label>
+          <select id="botInterval">
+            <option value="60">Every minute</option>
+            <option value="300">Every 5 minutes</option>
+            <option value="900">Every 15 minutes</option>
+            <option value="3600" selected>Every hour</option>
+            <option value="21600">Every 6 hours</option>
+            <option value="86400">Daily</option>
+            <option value="604800">Weekly</option>
+          </select>
+        </div>
+      </div>
+      <label id="botSkillsLabel">Skills for this bot</label>
+      <div id="botSkillPicker" class="skill-picker" role="group" aria-labelledby="botSkillsLabel"></div>
+      <p id="botSkillHint" class="muted small"></p>
+      <div class="row">
+        <button id="botSubmitBtn" class="primary">Create bot</button>
+        <button id="botModalCancelBtn" class="ghost">Cancel</button>
+        <span id="botFormError" class="statusline err"></span>
+      </div>
+    </div>
+  </div>
+  <div id="bgModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <h2>Keep your bots running when the window is closed?</h2>
+      <p class="muted">Bots run while NexusChat Open is open. Keep the app in the tray and they keep working.</p>
+      <div class="row">
+        <button id="bgYesBtn" class="primary">Keep running in background</button>
+        <button id="bgNoBtn" class="ghost">Quit fully on close</button>
+      </div>
+      <p class="muted small">Change it anytime in Settings → Background — or read more in Help (F1).</p>
+    </div>
+  </div>
+  <div id="intro" class="hidden" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="intro-card">
+      <div class="intro-logo" aria-hidden="true"></div>
+      <div class="intro-step on" id="introStep1">
+        <p class="intro-kicker">Welcome aboard</p>
+        <h1 class="intro-title" id="introTitle">Meet NexusChat Open.</h1>
+        <p class="intro-sub">One desktop app for chat and scheduled bots — running on your machine, with your own provider key. Free and open source.</p>
+                <div class="intro-actions">
+          <button type="button" class="primary" id="introNextBtn">Continue</button>
+        </div>
+        <div class="intro-dots" aria-hidden="true"><span class="on"></span><span></span></div>
+      </div>
+      <div class="intro-step" id="introStep2">
+        <p class="intro-kicker">One more thing</p>
+        <h2 class="intro-title">Bring your own key.</h2>
+        <p class="intro-sub">NexusChat Open never sells model access. Paste a provider key in the Providers tab — it is encrypted and stays on this PC.</p>
+        <div class="intro-tip">
+          <span class="it-icon" aria-hidden="true"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg></span></span>
+          <p><b>Tip:</b> local Ollama models need no key at all — install Ollama, pull a model, and chat works with Wi-Fi off.</p>
+        </div>
+        <div class="intro-actions">
+          <button type="button" class="primary" id="introDoneBtn">Start chatting</button>
+          <button type="button" class="ghost" id="introProvidersBtn">Open Providers</button>
+        </div>
+        <div class="intro-dots" aria-hidden="true"><span></span><span class="on"></span></div>
+      </div>
+      <button type="button" class="intro-skip" id="introSkipBtn">Skip setup</button>
+    </div>
+  </div>
+  <div id="helpModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal help-modal">
+      <div class="help-head">
+        <span class="help-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><path d="M12 17h.01"/></svg></span>
+        <div class="help-head-text">
+          <h2 id="helpTitle">Guide &amp; help</h2>
+          <p class="muted small">Every explanation lives in this window. Press F1 any time to come back.</p>
+        </div>
+        <button type="button" id="helpCloseBtn" class="icon-btn" title="Close help" aria-label="Close help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="help-split">
+        <nav id="helpTopics" class="help-topics" aria-label="Help topics"></nav>
+        <div class="help-pane">
+          <h3 id="helpTopicTitle">Guide &amp; help</h3>
+          <div id="helpBody" class="help-body" role="region" aria-labelledby="helpTopicTitle"></div>
+        </div>
+      </div>
+      <div class="row help-foot">
+        <button type="button" id="helpDoneBtn" class="primary">Got it</button>
+      </div>
+    </div>
+  </div>
+  <div id="botMenu" class="bot-menu hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

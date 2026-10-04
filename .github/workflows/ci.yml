@@ -1,0 +1,42 @@
+name: CI
+
+# The suite runs on plain Node — no Electron, no display — so this is quick and
+# runs on every push and pull request.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Syntax-check every source file
+        run: |
+          node --check src/main/main.js
+          node --check src/main/ipc.js
+          node --check src/preload.js
+          node --check src/renderer/app.js
+
+      - name: Run the test suite
+        run: npm test

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Hermes mark for NexusChat: a single white wing-bolt on a black field.
+       One color at a time (brand rule), built on a simple grid, scales
+       cleanly from favicon to app-store size. -->
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="#000000"/>
+  <!-- diagonal bolt body -->
+  <path d="M150 402 L296 96 L356 96 L302 208 L392 208 L212 402 Z" fill="#FFFFFF"/>
+  <!-- wing cut into the top-right of the bolt -->
+  <path d="M296 96 L430 96 L398 150 L342 150 L356 96 Z" fill="#FFFFFF"/>
+  <path d="M342 150 L418 150 L392 196 L330 196 Z" fill="#FFFFFF"/>
+</svg>

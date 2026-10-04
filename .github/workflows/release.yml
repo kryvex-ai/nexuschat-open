@@ -1,0 +1,54 @@
+name: Release
+
+# Builds the Windows installer and portable exe on real Windows (no wine needed)
+# and attaches them to a GitHub Release. Trigger: push a tag like v1.0.0.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run the test suite
+        run: npm test
+
+      - name: Build NSIS installer + portable exe
+        run: npx electron-builder --win nsis portable --x64
+        env:
+          # Optional: set these repo secrets with a code-signing cert to remove
+          # the SmartScreen "unknown publisher" warning.
+          # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: |
+            dist/*.exe
+            dist/latest.yml
+
+      - name: Attach to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.exe
+            dist/latest.yml
+          generate_release_notes: true
