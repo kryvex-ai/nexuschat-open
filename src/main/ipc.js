@@ -57,8 +57,11 @@ function initIpc(store) {
     for (const resolve of pendingAsks.values()) resolve({ decision: DECISION.DENY, reason });
     pendingAsks.clear();
   }
-  // Closing the app must not leave a prompt hanging forever.
-  app.on('before-quit', () => denyAllPending('The app is closing.'));
+  // Closing the app must not leave a prompt hanging forever. Guarded because
+  // tests load this module with a stand-in for `app` that has no event bus.
+  if (app && typeof app.on === 'function') {
+    app.on('before-quit', () => denyAllPending('The app is closing.'));
+  }
 
   function agentSettingsNow() {
     return store.getSettings().agent || {};
