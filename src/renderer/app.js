@@ -20,7 +20,9 @@ let appInfo = null;            // { version, dataDir, … } for the Settings tab
 let settingsSaveTimer = null;
 let agentState = null;          // agent:info — tools on/off, workspace, catalogue
 let toolsOn = false;            // per-chat: may the assistant use tools this turn?
-let pendingTool = null;         // the permission request currently on screen
+let pendingTool = null;         // the permission request on screen
+let toolQueue = [];            // requests that arrived while one was showing
+                                 // (the main process waits on each, so none may be dropped)
 
 /* ================================================================== */
 /* Boot                                                               */
@@ -274,6 +276,12 @@ async function renderMessages() {
   box.innerHTML = '';
   const conv = currentConvId ? await nexus.getConversation(currentConvId) : null;
   if (token !== renderToken) return; // superseded — the newest render owns the pane
+  // Tools follow the conversation: a chat that had them on keeps them, and
+  // another chat does not silently inherit the switch.
+  toolsOn = conv && typeof conv.tools === 'boolean'
+    ? conv.tools
+    : !!(agentState && agentState.enabled && agentState.workspaceOk);
+  updateToolsToggle();
   if (!conv || !conv.messages.length) {
     canRegenerate = false;
     updateRegenBtn();
@@ -812,6 +820,13 @@ function updateToolsToggle() {
 
 function showToolAsk(request) {
   if (!request) return;
+  // The loop runs calls one at a time, but a denied call can be followed
+  // immediately by another ask. Queue instead of overwriting: an overwritten
+  // request would leave the main process waiting until its timeout.
+  if (pendingTool) {
+    toolQueue.push(request);
+    return;
+  }
   pendingTool = request;
   const summary = $('#toolSummary');
   const detail = $('#toolDetail');
@@ -847,6 +862,8 @@ async function answerTool(decision) {
   } catch {
     toast('Could not answer that prompt — treating it as denied.', 'error');
   }
+  // Answer whatever was waiting behind this one.
+  if (toolQueue.length) showToolAsk(toolQueue.shift());
 }
 
 function bindAgent() {

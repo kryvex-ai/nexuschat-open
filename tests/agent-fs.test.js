@@ -238,3 +238,40 @@ test('http_fetch only speaks http(s), and says what came back', async () => {
   // An unreachable host is a failed result, not a crash
   assert.match(await rejected(() => shell('http_fetch', { url: 'http://127.0.0.1:1/nothing' }, root)), /Request failed/);
 });
+
+/* ---------------- git paths stay inside the workspace ---------------- */
+
+test('git tools stage the workspace copy, never the repository-root one', async () => {
+  // The realistic shape: the user picks repo/src as the workspace, and BOTH
+  // repo/secrets.env.js and repo/src/secrets.env.js exist. git resolves a bare
+  // pathspec from the REPOSITORY root, so passing the model's path straight
+  // through would stage the file outside the workspace — the wrong file,
+  // silently, for a tool the user approved.
+  const repo = tmpDir('audit-git-');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'secrets.env.js'), "API_KEY = 'sk-live'\n");
+  fs.writeFileSync(path.join(repo, 'src', 'secrets.env.js'), "API_KEY = 'local-copy'\n");
+  await shellTools.runProcess(['git', 'init', '-q', '-b', 'main'], { cwd: repo, env: { ...process.env } });
+  const handlers = shellTools.HANDLERS;
+  const ctx = { root: path.join(repo, 'src') };
+
+  const staged = await handlers.git_stage({ paths: ['secrets.env.js'] }, ctx);
+  assert.match(staged, /Staged: /);
+  assert.equal(execFileSyncSafe(repo), 'src/secrets.env.js', 'the workspace copy is what got staged');
+
+  // Climbing out is refused outright.
+  const escape = await rejected(() => handlers.git_stage({ paths: ['../secrets.env.js'] }, ctx));
+  assert.match(escape, /outside the workspace/);
+  const escapeDiff = await rejected(() => handlers.git_diff({ path: '../secrets.env.js' }, ctx));
+  assert.match(escapeDiff, /outside the workspace/);
+  const escapeLog = await rejected(() => handlers.git_log({ path: '../secrets.env.js' }, ctx));
+  assert.match(escapeLog, /outside the workspace/);
+});
+
+function execFileSyncSafe(repo) {
+  try {
+    return require('node:child_process').execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: repo, encoding: 'utf8' }).trim();
+  } catch {
+    return '(error)';
+  }
+}

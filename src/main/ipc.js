@@ -47,15 +47,23 @@ function initIpc(store) {
 
   function askPermission(request) {
     return new Promise((resolve) => {
-      pendingAsks.set(request.id, resolve);
+      // Remember which turn asked. A superseded turn must not be able to deny
+      // the prompts of the turn that replaced it.
+      pendingAsks.set(request.id, { resolve, gen: active ? active.gen : 0 });
       emit('tool:ask', request);
     });
   }
 
-  /** Answer everything outstanding as "no" — called when the chat is stopped. */
-  function denyAllPending(reason) {
-    for (const resolve of pendingAsks.values()) resolve({ decision: DECISION.DENY, reason });
-    pendingAsks.clear();
+  /**
+   * Answer outstanding prompts as "no". With `onlyGen`, prompts belonging to
+   * other turns are left alone.
+   */
+  function denyAllPending(reason, onlyGen) {
+    for (const [id, entry] of [...pendingAsks]) {
+      if (onlyGen !== undefined && entry.gen !== onlyGen) continue;
+      pendingAsks.delete(id);
+      entry.resolve({ decision: DECISION.DENY, reason });
+    }
   }
   // Closing the app must not leave a prompt hanging forever. Guarded because
   // tests load this module with a stand-in for `app` that has no event bus.
@@ -311,7 +319,8 @@ function initIpc(store) {
           console.error(err);
           emit('chat:error', { conversationId: conv.id, message: sanitizeError(err) });
         } finally {
-          denyAllPending('The chat was stopped.');
+          // Only this turn's prompts — a newer turn owns its own.
+          denyAllPending('The chat was stopped.', gen);
           if (isCurrent()) active = null;
         }
         return;
@@ -390,10 +399,10 @@ function initIpc(store) {
 
   ipcMain.handle('agent:allow', (_e, { id, decision, reason } = {}) => {
     const key = String(id || '');
-    const resolve = pendingAsks.get(key);
-    if (!resolve) return { ok: false, error: 'That request has already been answered or cancelled.' };
+    const entry = pendingAsks.get(key);
+    if (!entry) return { ok: false, error: 'That request has already been answered or cancelled.' };
     pendingAsks.delete(key);
-    resolve({
+    entry.resolve({
       decision: decision === DECISION.ALLOW || decision === DECISION.ALWAYS ? decision : DECISION.DENY,
       reason: reason ? String(reason).slice(0, 200) : undefined
     });

@@ -21,17 +21,33 @@ const { parseToolCalls, resultsToPrompt } = require('./tools');
 
 const DEFAULT_MAX_STEPS = 12;
 const MAX_STEPS_CAP = 25;
+/** How many tool results are carried into the next round's prompt. */
+const TOOL_HISTORY_MAX = 10;
 
 /** The system prompt when tools are on: the user's prompt, skills, then the tool manual. */
 function agentSystemPrompt(basePrompt) {
   return [basePrompt, manual()].filter(Boolean).join('\n');
 }
 
-/** Conversation history as prompt messages, tool results included verbatim. */
+/**
+ * Conversation history as prompt messages, tool results included.
+ *
+ * Tool results are replayed so the model can act on them, but only the newest
+ * TOOL_HISTORY_MAX: one read of a large file is up to 400 kB, and a long agent
+ * turn produces many of them, so keeping every one would grow the prompt
+ * without bound across rounds.
+ */
 function historyOf(conv) {
-  return (conv.messages || [])
-    .filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
-    .map(m => ({ role: m.role, content: m.content }));
+  const messages = (conv && conv.messages) || [];
+  const out = [];
+  let toolSeen = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'tool') continue;
+    if (m.role === 'tool' && ++toolSeen > TOOL_HISTORY_MAX) continue;
+    out.unshift({ role: m.role, content: m.content });
+  }
+  return out;
 }
 
 /** What the renderer needs to draw one activity row. */

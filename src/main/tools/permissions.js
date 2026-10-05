@@ -23,6 +23,9 @@ const { RISK } = require('../../shared/tools');
 const DECISION = { ALLOW: 'allow', DENY: 'deny', ALWAYS: 'always' };
 
 const DEFAULT_ASK_TIMEOUT_MS = 5 * 60 * 1000;
+/** How many decisions the audit log keeps. A long session runs thousands of
+ *  calls; without a cap this array is a slow leak. */
+const LOG_MAX = 200;
 
 function fail(msg) {
   throw new Error(msg);
@@ -51,6 +54,12 @@ class PermissionGate {
     this.log = log;
     this.timeoutMs = timeoutMs;
     this.grants = new Map();   // "tool" | "tool:scope" -> true
+  }
+
+  /** Append to the audit log, keeping only the newest LOG_MAX entries. */
+  record(entry) {
+    this.log.push(entry);
+    if (this.log.length > LOG_MAX) this.log.splice(0, this.log.length - LOG_MAX);
   }
 
   grantKey(tool, args) {
@@ -85,7 +94,7 @@ class PermissionGate {
     if (tool.risk === RISK.READ && !this.askBeforeReads) {
       entry.decision = 'allowed';
       entry.source = 'policy';
-      this.log.push(entry);
+      this.record(entry);
       return { decision: DECISION.ALLOW, source: 'policy' };
     }
 
@@ -94,18 +103,20 @@ class PermissionGate {
     if (tool.risk === RISK.WRITE && this.allowSessionGrants && this.grants.has(this.grantKey(tool, args))) {
       entry.decision = 'allowed';
       entry.source = 'grant';
-      this.log.push(entry);
+      this.record(entry);
       return { decision: DECISION.ALLOW, source: 'grant' };
     }
 
     if (!this.ask) {
       entry.decision = 'denied';
       entry.source = 'no-ui';
-      this.log.push(entry);
+      this.record(entry);
       return { decision: DECISION.DENY, source: 'no-ui', reason: 'There is nobody to ask, so nothing was allowed.' };
     }
 
     let answer;
+    let timer = null;
+    const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
     try {
       answer = await Promise.race([
         this.ask({
@@ -119,12 +130,15 @@ class PermissionGate {
           canRemember: tool.risk === RISK.WRITE && this.allowSessionGrants
         }),
         new Promise(resolve => {
-          const t = setTimeout(() => resolve({ decision: DECISION.DENY, reason: 'Timed out waiting for an answer.' }), this.timeoutMs);
-          if (t.unref) t.unref();
+          timer = setTimeout(() => resolve({ decision: DECISION.DENY, reason: 'Timed out waiting for an answer.' }), this.timeoutMs);
+          if (timer.unref) timer.unref();
         })
       ]);
     } catch (e) {
       answer = { decision: DECISION.DENY, reason: 'The permission prompt failed: ' + (e && e.message ? e.message : String(e)) };
+    } finally {
+      // The losing timer must not outlive the answer.
+      clearTimer();
     }
 
     const decision = answer && answer.decision === DECISION.ALLOW ? DECISION.ALLOW
@@ -138,7 +152,7 @@ class PermissionGate {
         entry.decision = 'denied';
         entry.source = 'policy';
         entry.reason = 'This kind of action is never remembered — it asks every time.';
-        this.log.push(entry);
+        this.record(entry);
         return { decision: DECISION.DENY, source: 'policy', reason: entry.reason };
       }
       this.grants.set(this.grantKey(tool, args), true);
@@ -147,7 +161,7 @@ class PermissionGate {
     entry.decision = decision === DECISION.DENY ? 'denied' : 'allowed';
     entry.source = 'user';
     if (decision === DECISION.DENY && answer && answer.reason) entry.reason = String(answer.reason).slice(0, 200);
-    this.log.push(entry);
+    this.record(entry);
 
     if (entry.decision === 'denied' && !entry.reason) {
       return { decision: DECISION.DENY, source: 'user', reason: 'The user declined this action.' };

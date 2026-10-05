@@ -137,14 +137,36 @@ async function repoDir(root, maybe) {
   return null;
 }
 
+/**
+ * Turn a model-supplied path into a pathspec that is BOTH inside the
+ * workspace and inside the repository.
+ *
+ * This exists because git resolves a pathspec against the repository root,
+ * not the directory the user picked. Without it, a workspace of
+ * repo/src plus the path "secrets.env.js" would happily stage repo/secrets.env.js
+ * — outside the folder the user chose, and for the read-only tools silently so.
+ */
+function repoPathspec(root, p, repo) {
+  const r = resolvePath(root, p);
+  if (!r.ok) fail(r.error);
+  const rel = path.relative(repo.dir, r.abs);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    fail(`${r.rel} is not inside this git repository, so git cannot be pointed at it.`);
+  }
+  return rel.split(path.sep).join('/');
+}
+
 async function git(root, argv, { cwdRel = '', timeoutMs = 60000 } = {}) {
   const repo = await repoDir(root, cwdRel);
   assertSafeGitArgs([...argv]);
-  return runProcess(['git', '--no-pager', '-c', 'color.ui=false', ...argv], {
+  const res = await runProcess(['git', '--no-pager', '-c', 'color.ui=false', ...argv], {
     cwd: repo.dir,
     timeoutMs,
     env: GIT_ENV
   });
+  // Hand the repository back so handlers can turn a workspace path into a
+  // pathspec that git will also accept.
+  return { ...res, repo };
 }/* ---------------- git handlers ---------------- */
 
 const GIT_HANDLERS = {
@@ -157,7 +179,11 @@ const GIT_HANDLERS = {
     const argv = ['diff'];
     if (args.staged === true) argv.push('--staged');
     if (args.ref) { assertSafeGitArgs([String(args.ref)]); argv.push(String(args.ref)); }
-    if (args.path) { assertSafeGitArgs([String(args.path)]); argv.push('--', String(args.path)); }
+    if (args.path) {
+      assertSafeGitArgs([String(args.path)]);
+      const repo = await repoDir(root, '');
+      argv.push('--', repoPathspec(root, args.path, repo));
+    }
     const r = await git(root, argv);
     if (r.code !== 0) return `git diff failed: ${r.stderr || r.stdout}`;
     return r.stdout.trim() ? r.stdout : 'No differences.';
@@ -166,7 +192,11 @@ const GIT_HANDLERS = {
   async git_log(args, { root }) {
     const limit = Math.min(200, Math.max(1, Math.floor(Number(args.limit) || 20)));
     const argv = ['log', `-${limit}`, '--date=short', '--pretty=%h %ad %an %s'];
-    if (args.path) { assertSafeGitArgs([String(args.path)]); argv.push('--', String(args.path)); }
+    if (args.path) {
+      assertSafeGitArgs([String(args.path)]);
+      const repo = await repoDir(root, '');
+      argv.push('--', repoPathspec(root, args.path, repo));
+    }
     const r = await git(root, argv);
     return r.code === 0 ? (r.stdout.trim() || 'No commits yet.') : `git log failed: ${r.stderr || r.stdout}`;
   },
@@ -178,10 +208,15 @@ const GIT_HANDLERS = {
   },
 
   async git_stage(args, { root }) {
-    const paths = (args.paths && args.paths.length) ? args.paths : ['.'];
-    assertSafeGitArgs(paths);
-    const r = await git(root, [args.unstage === true ? 'restore' : 'add', '--', ...paths]);
-    if (r.code !== 0) return `git ${args.unstage ? 'restore' : 'add'} failed: ${r.stderr || r.stdout}`;
+    const asked = (args.paths && args.paths.length) ? args.paths : ['.'];
+    assertSafeGitArgs(asked);
+    // Resolve the repository and every pathspec BEFORE running git. The paths
+    // are resolved against the workspace, because git would take them relative
+    // to the repository root and could walk out of the folder the user chose.
+    const repo = await repoDir(root, '');
+    const paths = asked.map(p => repoPathspec(root, p, repo));
+    const staged = await git(root, [args.unstage === true ? 'restore' : 'add', '--', ...paths]);
+    if (staged.code !== 0) return `git ${args.unstage ? 'restore' : 'add'} failed: ${staged.stderr || staged.stdout}`;
     const status = await git(root, ['status', '--short']);
     return `${args.unstage ? 'Unstaged' : 'Staged'}: ${paths.join(', ')}\n${status.stdout.trim() || '(nothing else changed)'}`;
   },
