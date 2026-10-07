@@ -205,3 +205,10 @@ test('the live stream bubble survives the mid-stream repaint', () => {
   assert.match(delta[0], /conversationId !== currentConvId/,
     'deltas must never paint into a chat the user switched to');
 });
+
+test('a source-run update check points at the releases page', () => {
+  const body = appJs.match(/async function checkForUpdates\(atLaunch\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(body, 'checkForUpdates missing');
+  assert.match(body[0], /info\.skipped[\s\S]*updateOpenRelease/,
+    'the pill in a source checkout must lead to the releases page, not a dead end');
+});

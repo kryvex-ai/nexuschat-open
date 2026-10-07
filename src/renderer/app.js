@@ -2016,9 +2016,13 @@ async function checkForUpdates(atLaunch) {
   let info;
   try { info = await nexus.updateCheck(); } catch { return; }
   if (!info) return;
-  // Source checkout / CI: no install to replace, so nothing to show.
+  // Source checkout / CI: no install to replace, so nothing to install.
   if (info.skipped) {
-    if (!atLaunch) toast('Updates are installed only in the packaged app — you are running from source.');
+    if (!atLaunch) {
+      // Send them to where the real builds live instead of a dead end.
+      try { await nexus.updateOpenRelease(); } catch { /* no browser at hand */ }
+      toast('Updates are installed only in the packaged app — opened the releases page instead.', 'info');
+    }
     return;
   }
   updateInfo = info.updateAvailable ? info : null;
