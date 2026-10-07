@@ -191,3 +191,17 @@ test('the renderer never interpolates data into innerHTML', () => {
   }
   assert.deepEqual(bad, [], 'unsafe HTML writes: ' + bad.join(' | '));
 });
+
+test('the live stream bubble survives the mid-stream repaint', () => {
+  // chat:send returns as soon as generation starts, and sendMessage repaints
+  // the pane while the reply is still streaming. That repaint used to detach
+  // the streaming bubble, so every delta painted off-screen and the reply
+  // popped in whole at chat:done — the exact bug the live check also covers.
+  const ensure = appJs.match(/function ensureStreamBubble\(\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(ensure, 'ensureStreamBubble missing');
+  assert.match(ensure[0], /isConnected/, 'the bubble must be reattached after renderMessages rebuilds the pane');
+  const delta = appJs.match(/function onChatDelta\(payload\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(delta, 'onChatDelta missing');
+  assert.match(delta[0], /conversationId !== currentConvId/,
+    'deltas must never paint into a chat the user switched to');
+});

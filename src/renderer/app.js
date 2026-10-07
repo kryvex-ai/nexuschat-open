@@ -377,6 +377,14 @@ function appendMsg(role, text, cls) {
 }
 
 function ensureStreamBubble() {
+  // chat:send returns as soon as generation starts, so sendMessage repaints
+  // the pane (renderMessages → innerHTML = '') while the reply is still
+  // streaming — and that repaint detaches this node. Reattach it, or every
+  // later delta paints off-screen and the reply only appears when it ends.
+  if (streamBubble && !streamBubble.isConnected) {
+    $('#messages').appendChild(streamBubble);
+    $('#messages').scrollTop = $('#messages').scrollHeight;
+  }
   if (!streamBubble) {
     streamBubble = appendMsg('assistant', '');
     const cursor = document.createElement('span');
@@ -478,11 +486,16 @@ async function sendMessage(presetText) {
 
 function onChatBegin(payload) {
   streamedText = '';
-  ensureStreamBubble();
+  // A new conversation's id only lands after the send promise resolves —
+  // begin may arrive before it, so paint only when this chat is on screen.
+  if (!currentConvId || payload.conversationId === currentConvId) ensureStreamBubble();
 }
 
 function onChatDelta(payload) {
   streamedText += payload.delta;
+  // Deltas always accumulate, but never paint into a different chat the
+  // user switched to mid-stream.
+  if (currentConvId && payload.conversationId !== currentConvId) return;
   const bubble = ensureStreamBubble();
   bubble.textContent = streamedText;
   const cursor = document.createElement('span');
@@ -503,7 +516,9 @@ async function onChatDone(payload) {
 function onChatError(payload) {
   setStreamingUI(false);
   clearStreamBubble();
-  appendMsg('assistant', '! ' + payload.message, 'error');
+  if (!currentConvId || payload.conversationId === currentConvId) {
+    appendMsg('assistant', '! ' + payload.message, 'error');
+  }
 }
 
 function bindChatEvents() {

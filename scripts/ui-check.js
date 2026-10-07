@@ -18,6 +18,7 @@
 const PORT = Number(process.env.NEXUS_CDP_PORT || 9222);
 const BASE = 'http://127.0.0.1:' + PORT;
 const EXPECTED_VERSION = require('../package.json').version;
+const http = require('http');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const results = [];
@@ -269,6 +270,63 @@ async function attach(wsUrl) {
     !!updCheck && updCheck.skipped === true && updCheck.updateAvailable === false
       && typeof updCheck.current === 'string',
     JSON.stringify(updCheck));
+
+  // Live streaming, end to end: chat:send returns as soon as generation
+  // starts, so sendMessage repaints the pane while the reply is still
+  // streaming. The bubble used to be detached by that repaint and every
+  // delta painted off-screen — the reply only appeared whole at the end.
+  // A local SSE provider serves five chunks with gaps; the bubble on screen
+  // must visibly grow before the reply is finished.
+  const fake = await new Promise((resolve) => {
+    const srv = http.createServer((req, res) => {
+      req.resume();
+      if (!/\/chat\/completions/.test(req.url || '')) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const chunks = ['Hello ', 'streaming ', 'works ', 'token by ', 'token!'];
+      let i = 0;
+      const timer = setInterval(() => {
+        if (i < chunks.length) {
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: chunks[i++] } }] }) + '\n\n');
+        } else {
+          res.write('data: [DONE]\n\n');
+          res.end();
+          clearInterval(timer);
+        }
+      }, 300);
+      res.on('close', () => clearInterval(timer));
+    });
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+  const fakeBase = 'http://127.0.0.1:' + fake.address().port;
+  await client.evaluate(`document.querySelector('[data-tab="chat"]').click()`);
+  await sleep(150);
+  const kicked = JSON.parse(await client.evaluate(`(async () => {
+    const saved = await nexus.saveProvider('custom', { baseUrl: ${JSON.stringify(fakeBase)}, apiKey: 'test', models: ['fakemodel'] });
+    state.settings.activeChatModel = 'custom::fakemodel';
+    document.getElementById('input').value = 'streaming check';
+    document.getElementById('sendBtn').click();
+    return JSON.stringify({ saved: !!(saved && saved.ok) });
+  })()`));
+  const samples = [];
+  let streamed = '';
+  const streamUntil = Date.now() + 8000;
+  while (Date.now() < streamUntil) {
+    const sample = JSON.parse(await client.evaluate(`(() => {
+      const msgs = [...document.querySelectorAll('#messages .msg.assistant')];
+      const last = msgs[msgs.length - 1];
+      return JSON.stringify({ text: last ? last.textContent : '' });
+    })()`));
+    if (sample.text && (!samples.length || samples[samples.length - 1] !== sample.text)) samples.push(sample.text);
+    if (sample.text === 'Hello streaming works token by token!') { streamed = sample.text; break; }
+    await sleep(120);
+  }
+  if (typeof fake.closeAllConnections === 'function') fake.closeAllConnections();
+  fake.close();
+  check('a fake OpenAI-compatible provider accepted the send', kicked.saved === true, JSON.stringify(kicked));
+  check('the reply streams token by token instead of arriving whole',
+    streamed === 'Hello streaming works token by token!'
+      && samples.filter(s => s !== 'Hello streaming works token by token!').length >= 3,
+    samples.length + ' shapes: ' + samples.map(s => s.length).join('->'));
 
   await sleep(200);
   check('nothing threw in the renderer', crashes.length === 0, crashes.join(' | '));
