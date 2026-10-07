@@ -12,7 +12,7 @@ cost time. Public contribution rules live in [CONTRIBUTING.md](CONTRIBUTING.md).
 | `npm run smoke` | boots the real window once and prints `SMOKE_OK` |
 | `npm run ui:check` | boots the real window, drives it over CDP, asserts the UI |
 | `npm run start:linux` | runs the app headless; extra args go to Electron |
-| `npm run icon` | regenerates `build/icon.png` |
+| `npm run icon` | regenerates `build/icon.png` + `src/renderer/logo.png` from `brand/kryvex-logo.png` |
 | `npm run dist:win` | builds the NSIS installer + portable exe via electron-builder |
 
 Headless Linux (containers, CI, a remote box) needs none of `sudo`:
@@ -46,13 +46,15 @@ src/main/       Electron main: ipc.js (every channel), store.js (settings +
                 permission gate, workspace confinement), secure.js
                 (safeStorage adapter for keys at rest)
 src/preload.js  the nexus.* bridge — one function per channel, nothing else
-src/renderer/   app.js (all UI), index.html, theme.css
+src/renderer/   app.js (all UI), index.html, theme.css, logo.png
+                (generated — do not edit, run `npm run icon`)
 src/shared/     brand.js (rename the app here), providers.js (registry),
                 skills.js (prompt-level skill registry + composer),
                 tools.js (the tool registry — names, args, risk classes),
                 directives.js (the [[tool …]] / [[bot …]] scanner)
 scripts/        run-linux.sh (headless), ui-check.js (live UI over CDP),
-                gen-icon.js
+                gen-icon.js + png.js (the icon generator and its PNG codec)
+brand/          kryvex-logo.png — the source every app logo is generated from
 tests/          node --test; pure modules are exercised directly, the
                 renderer contract is asserted as text plus a DOM-stub run,
                 and tests/agent*.test.js cover the tool layer

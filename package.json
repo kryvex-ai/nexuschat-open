@@ -25,7 +25,8 @@
     "appId": "app.nexuschat.open",
     "productName": "NexusChat Open",
     "files": [
-      "src/**/*"
+      "src/**/*",
+      "build/icon.png"
     ],
     "win": {
       "target": [

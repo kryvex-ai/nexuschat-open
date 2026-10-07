@@ -126,7 +126,7 @@ npm start          # run the app
 npm test           # the whole suite — plain Node, no display needed
 npm run smoke      # boot the real window once and print SMOKE_OK
 npm run ui:check   # boot the window and assert the live UI over CDP
-npm run icon       # regenerate build/icon.png
+npm run icon       # regenerate the app logos from brand/kryvex-logo.png
 ```
 
 Headless Linux (containers, CI, a remote shell) needs no `sudo`:
@@ -146,14 +146,17 @@ nexuschat-open/
 │   │                     #   permission gate, workspace confinement),
 │   │                     #   secure.js (key encryption at rest)
 │   ├── preload.js        # the nexus.* bridge — one function per channel, nothing else
-│   ├── renderer/         # app.js (all UI), index.html, theme.css
+│   ├── renderer/         # app.js (all UI), index.html, theme.css, logo.png
+│   │                     #   (generated — npm run icon)
 │   └── shared/           # brand.js (rename the app here), providers.js,
 │                         #   skills.js, tools.js (the tool registry),
 │                         #   directives.js (the [[tool …]] scanner)
-├── scripts/              # run-linux.sh (headless), ui-check.js (live UI checks)
+├── brand/                # kryvex-logo.png — the source of every app logo
+├── scripts/              # run-linux.sh (headless), ui-check.js (live UI checks),
+│                         #   gen-icon.js + png.js (logo generation)
 ├── tests/                # node --test — logic, storage, IPC contract, UI
 │                         #   wiring, and the agent layer (agent*.test.js)
-└── build/icon.png
+└── build/icon.png        # window/tray/installer icon (npm run icon)
 ```
 
 Adding a feature usually means all four: main logic (preferably a pure module with
