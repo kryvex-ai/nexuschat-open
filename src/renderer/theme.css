@@ -314,6 +314,10 @@ main { flex: 1; min-height: 0; }
 .view.active { display: flex; }
 
 #view-skills.active { display: block; overflow-y: auto; }
+/* Settings and Providers are plain pages inside a body that is overflow
+   hidden — without their own scroller, everything below the window edge
+   (the whole "Assistant & tools" panel, for one) is unreachable. */
+#view-settings.active, #view-providers.active { overflow-y: auto; }
 .page { max-width: 900px; margin: 0 auto; padding: 28px 24px 90px; }
 
 /* ======================================================================== */

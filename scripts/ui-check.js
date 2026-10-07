@@ -135,6 +135,19 @@ async function attach(wsUrl) {
   check('no mode switch survives', settings.mode === false);
   check('no SSH panel survives', settings.ssh === false);
 
+  // The page views must scroll themselves: body is overflow hidden, so a
+  // view without its own scroller clips everything below the window edge —
+  // which is how the Assistant panel became unreachable.
+  const scroll = JSON.parse(await client.evaluate(`(() => {
+    const v = document.querySelector('#view-settings.active');
+    if (!v) return JSON.stringify({ missing: true });
+    v.scrollTop = 120;
+    const moved = v.scrollTop > 0;
+    v.scrollTop = 0;
+    return JSON.stringify({ overflowY: getComputedStyle(v).overflowY, moved });
+  })()`));
+  check('the settings page scrolls', scroll.overflowY === 'auto' && scroll.moved === true, JSON.stringify(scroll));
+
   // The assistant's own UI: the workspace panel and the permission prompt.
   const agentUi = JSON.parse(await client.evaluate(`(() => {
     const g = (id) => document.getElementById(id);

@@ -136,6 +136,15 @@ test('every skill/plugin style class used by the UI has CSS', () => {
   assert.ok(indexHtml.includes('class="save-pill"'), 'save pills use the styled class');
 });
 
+test('the plain page views own their scrolling', () => {
+  // body is overflow: hidden, so a page view without its own scroller clips
+  // its content at the window edge — which is how the whole Assistant panel
+  // became unreachable on a short window.
+  assert.match(themeCss, /#view-settings\.active, #view-providers\.active \{ overflow-y: auto; \}/,
+    'settings and providers scroll themselves');
+  assert.match(themeCss, /#view-skills\.active[^}]*overflow-y: auto/, 'skills already did; keep it that way');
+});
+
 test('index.html has no stray whitespace and links the shipped stylesheet', () => {
   const trailing = indexHtml.split('\n')
     .map((line, i) => (/[ \t]+$/.test(line) ? i + 1 : 0))
