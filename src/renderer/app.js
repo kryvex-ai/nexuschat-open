@@ -803,6 +803,7 @@ function renderSettings() {
     bgPill.className = 'badge ' + (on ? 'ok' : '');
   }
   renderBackgroundSetting();
+  renderSsh();
 }
 
 /**
@@ -879,6 +880,370 @@ function bindSettings() {
       toast('Import failed: ' + (r.error || 'unknown'), 'error');
     }
   });
+  bindSsh();
+}
+
+/* ================================================================== */
+/* SSH: saved hosts, the runner, the file browser and the self-test   */
+/* ================================================================== */
+
+/* Hosts live in settings (saved through the normal whitelist) and are
+ * addressed by id everywhere — the renderer never hands the main process
+ * a host string, only a row the user picked. Every path and command is
+ * validated again on the other side of the bridge. */
+
+let sshSelectedId = null;   // id of the chosen host row
+let sshEditing = false;     // the form edits that host instead of starting a new one
+let sshListedDir = '';      // last directory the browser resolved
+let sshSelectedFile = null; // { name, path } of the highlighted row
+
+function sshHosts() {
+  const list = state.settings.sshHosts;
+  return Array.isArray(list) ? list : [];
+}
+
+function sshSelectedHost() {
+  return sshHosts().find(h => h && h.id === sshSelectedId) || null;
+}
+
+/** Buttons that need a chosen host (or a chosen file) go enabled or not. */
+function updateSshButtons() {
+  const have = !!sshSelectedHost();
+  const file = have && !!sshSelectedFile;
+  for (const id of ['sshRunBtn', 'sshListBtn', 'sshUpBtn', 'sshTestBtn', 'sshForgetKeyBtn', 'sshRemoveHostBtn']) {
+    const el = $('#' + id);
+    if (el) el.disabled = !have;
+  }
+  for (const id of ['sshPreviewBtn', 'sshDownloadBtn']) {
+    const el = $('#' + id);
+    if (el) el.disabled = !file;
+  }
+}
+
+function renderSsh() {
+  const hostList = $('#sshHostList');
+  if (!hostList) return;
+  const hosts = sshHosts();
+  if (sshSelectedId && !sshSelectedHost()) sshSelectedId = null;
+  const count = $('#sshCount');
+  if (count) count.textContent = hosts.length + (hosts.length === 1 ? ' host' : ' hosts');
+  hostList.textContent = '';
+  if (!hosts.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted small';
+    empty.textContent = 'No hosts yet — fill in the form below and press “Save host”.';
+    hostList.appendChild(empty);
+  }
+  for (const h of hosts) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'ssh-host-row' + (h.id === sshSelectedId ? ' on' : '');
+    const name = document.createElement('span');
+    name.className = 'ssh-host-name';
+    name.textContent = h.label || h.host;
+    const dest = document.createElement('span');
+    dest.className = 'ssh-host-dest';
+    dest.textContent = (h.user ? h.user + '@' : '') + h.host + (h.port && Number(h.port) !== 22 ? ':' + h.port : '');
+    row.appendChild(name);
+    row.appendChild(dest);
+    row.addEventListener('click', () => selectSshHost(h.id));
+    hostList.appendChild(row);
+  }
+  updateSshButtons();
+}
+
+/** Pick a saved host: fill the form with it and clear the old run output. */
+function selectSshHost(id) {
+  sshSelectedId = id;
+  sshEditing = true;
+  const h = sshSelectedHost();
+  if (h) {
+    $('#sshLabel').value = h.label || '';
+    $('#sshHost').value = h.host || '';
+    $('#sshUser').value = h.user || '';
+    $('#sshPort').value = h.port && Number(h.port) !== 22 ? h.port : '';
+    $('#sshKey').value = h.keyFile || '';
+  }
+  clearSshOutputs();
+  renderSsh();
+}
+
+function clearSshOutputs() {
+  sshListedDir = '';
+  sshSelectedFile = null;
+  for (const [id, text] of [
+    ['sshOut', ''], ['sshPreview', ''], ['sshFindings', ''], ['sshConfig', ''],
+    ['sshNote', ''], ['sshFileStatus', '']
+  ]) { const el = $('#' + id); if (el) el.textContent = text; }
+  const score = $('#sshScore');
+  if (score) { score.textContent = 'not run'; score.className = 'badge'; }
+  const files = $('#sshFiles');
+  if (files) { files.textContent = ''; files.classList.add('hidden'); }
+}
+
+/** Disable a button while a bounded SSH call runs; state comes back after. */
+async function sshBusy(btn, label, fn) {
+  if (!btn || btn.disabled) return;
+  const old = btn.textContent;
+  btn.textContent = label;
+  btn.disabled = true;
+  try {
+    await fn();
+  } catch (e) {
+    toast('SSH: ' + ((e && e.message) || e), 'error');
+  } finally {
+    btn.textContent = old;
+    updateSshButtons();
+  }
+}
+
+async function saveSshHost() {
+  const host = $('#sshHost').value.trim();
+  if (!host) { toast('Enter a host name or IP address.', 'error'); return; }
+  const portRaw = $('#sshPort').value.trim();
+  let port = 22;
+  if (portRaw) {
+    port = parseInt(portRaw, 10);
+    if (!Number.isFinite(port) || port < 1 || port > 65535) { toast('Port must be between 1 and 65535.', 'error'); return; }
+  }
+  const entry = {
+    id: (sshEditing && sshSelectedId) ? sshSelectedId : 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+    label: $('#sshLabel').value.trim(),
+    host,
+    user: $('#sshUser').value.trim(),
+    port,
+    keyFile: $('#sshKey').value.trim()
+  };
+  const hosts = sshHosts().slice();
+  const i = hosts.findIndex(h => h && h.id === entry.id);
+  if (i >= 0) hosts[i] = entry; else hosts.push(entry);
+  if (await saveSetting({ sshHosts: hosts })) {
+    sshSelectedId = entry.id;
+    sshEditing = true;
+    renderSsh();
+    toast('Host saved.', 'ok');
+  }
+}
+
+async function removeSshHost() {
+  const h = sshSelectedHost();
+  if (!h) return;
+  if (!confirm('Remove “' + (h.label || h.host) + '” from the saved list? Nothing changes on the machine itself.')) return;
+  const hosts = sshHosts().filter(x => x && x.id !== h.id);
+  if (await saveSetting({ sshHosts: hosts })) {
+    sshSelectedId = null;
+    sshEditing = false;
+    clearSshOutputs();
+    renderSsh();
+  }
+}
+
+async function runSshCommand() {
+  const host = sshSelectedHost();
+  if (!host) { toast('Pick a saved host first.', 'error'); return; }
+  const cmd = $('#sshCmd').value;
+  if (!cmd.trim()) { toast('Type a command to run.', 'error'); return; }
+  const out = $('#sshOut');
+  await sshBusy($('#sshRunBtn'), 'Running…', async () => {
+    out.textContent = 'Running on ' + host.host + '…';
+    const r = await nexus.sshRun(host.id, cmd);
+    if (!r || !r.ok) { out.textContent = '! ' + ((r && r.error) || 'The command failed to start.'); return; }
+    let text = '$ ' + cmd.trim() + '\n';
+    if (r.stdout) text += r.stdout;
+    if (r.stderr) text += (r.stdout ? '\n' : '') + '[stderr]\n' + r.stderr;
+    if (r.truncated) text += '\n… output truncated …';
+    text += '\n— exit ' + r.code + (r.timedOut ? ' (timed out)' : '') + ' · ' + r.ms + ' ms';
+    out.textContent = text;
+  });
+}
+
+/** List the remote directory in #sshPath ('' = login home). */
+async function sshListDir() {
+  const host = sshSelectedHost();
+  if (!host) { toast('Pick a saved host first.', 'error'); return; }
+  const files = $('#sshFiles');
+  const status = $('#sshFileStatus');
+  await sshBusy($('#sshListBtn'), 'Listing…', async () => {
+    const r = await nexus.sshList(host.id, $('#sshPath').value);
+    if (!r || !r.ok) {
+      if (status) status.textContent = (r && r.error) || 'Listing failed.';
+      if (files) files.classList.add('hidden');
+      return;
+    }
+    sshListedDir = r.dir || '';
+    $('#sshPath').value = sshListedDir || $('#sshPath').value;
+    sshSelectedFile = null;
+    files.textContent = '';
+    files.classList.remove('hidden');
+    if (!r.entries.length) {
+      if (status) status.textContent = 'Nothing here — the path may not exist.';
+    } else if (status) {
+      status.textContent = r.entries.length + (r.entries.length === 1 ? ' entry' : ' entries');
+    }
+    for (const e of r.entries) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ssh-file-row';
+      const ic = document.createElement('span');
+      ic.className = 'ic';
+      ic.textContent = e.dir ? '▸' : '·';
+      const name = document.createElement('span');
+      name.textContent = e.name;
+      row.appendChild(ic);
+      row.appendChild(name);
+      row.addEventListener('click', async () => {
+        if (e.dir) {
+          $('#sshPath').value = e.path;
+          await sshListDir();
+        } else {
+          sshSelectedFile = e;
+          for (const other of files.querySelectorAll('.ssh-file-row')) other.classList.remove('on');
+          row.classList.add('on');
+          if (status) status.textContent = e.name;
+          updateSshButtons();
+        }
+      });
+      files.appendChild(row);
+    }
+    updateSshButtons();
+  });
+}
+
+function sshUpDir() {
+  const cur = ($('#sshPath').value || '').trim() || sshListedDir || '';
+  if (!cur) return;
+  const parent = cur.replace(/\/[^/]+$/, '');
+  $('#sshPath').value = parent ? parent : '/';
+  sshListDir();
+}
+
+async function sshPreviewFile() {
+  const host = sshSelectedHost();
+  const file = sshSelectedFile;
+  if (!host || !file) return;
+  const out = $('#sshPreview');
+  const status = $('#sshFileStatus');
+  await sshBusy($('#sshPreviewBtn'), 'Reading…', async () => {
+    const r = await nexus.sshRead(host.id, file.path);
+    if (!r || !r.ok) { out.textContent = '! ' + ((r && r.error) || 'Could not read the file.'); return; }
+    if (r.binary) {
+      out.textContent = 'Binary file — ' + r.bytes + ' bytes. Preview skipped.';
+      return;
+    }
+    let text = r.text;
+    const shown = text.length > 200000;
+    if (shown) text = text.slice(0, 200000);
+    out.textContent = text + (shown || r.truncated ? '\n… truncated …' : '');
+    if (status) status.textContent = file.name + ' — ' + r.bytes + ' bytes read';
+  });
+}
+
+async function sshDownloadFile() {
+  const host = sshSelectedHost();
+  const file = sshSelectedFile;
+  if (!host || !file) return;
+  const status = $('#sshFileStatus');
+  await sshBusy($('#sshDownloadBtn'), 'Saving…', async () => {
+    const r = await nexus.sshSave(host.id, file.path, file.name);
+    if (!r || !r.ok) { toast('Save failed: ' + ((r && r.error) || 'unknown'), 'error'); return; }
+    if (status) status.textContent = 'Saved as ' + r.savedAs;
+    toast('Saved to the workspace as ' + r.savedAs + '.', 'ok');
+  });
+}
+
+async function runSshSelfTest() {
+  const host = sshSelectedHost();
+  if (!host) { toast('Pick a saved host first.', 'error'); return; }
+  const scoreEl = $('#sshScore');
+  const findingsEl = $('#sshFindings');
+  const noteEl = $('#sshNote');
+  const cfgEl = $('#sshConfig');
+  await sshBusy($('#sshTestBtn'), 'Testing…', async () => {
+    scoreEl.textContent = '…';
+    findingsEl.textContent = '';
+    noteEl.textContent = '';
+    cfgEl.textContent = '';
+    const r = await nexus.sshTest(host.id);
+    if (!r || !r.ok) {
+      scoreEl.textContent = 'failed';
+      scoreEl.className = 'badge ssh-score bad';
+      const row = document.createElement('div');
+      row.className = 'finding bad';
+      const t = document.createElement('strong');
+      t.textContent = '✕ ' + ((r && r.error) || 'The self-test could not run.');
+      row.appendChild(t);
+      findingsEl.appendChild(row);
+      return;
+    }
+    scoreEl.textContent = r.score + ' / 100';
+    scoreEl.className = 'badge ssh-score ' + (r.score >= 80 ? 'good' : r.score >= 50 ? 'warn' : 'bad');
+    for (const f of r.findings || []) {
+      const row = document.createElement('div');
+      row.className = 'finding ' + (f.level || '');
+      const t = document.createElement('strong');
+      t.textContent = (f.level === 'bad' ? '✕ ' : f.level === 'warn' ? '! ' : '✓ ') + (f.title || '');
+      row.appendChild(t);
+      const d = document.createElement('div');
+      d.textContent = f.detail || '';
+      row.appendChild(d);
+      if (f.fix) {
+        const fx = document.createElement('span');
+        fx.className = 'fx';
+        fx.textContent = 'Fix: ' + f.fix;
+        row.appendChild(fx);
+      }
+      findingsEl.appendChild(row);
+    }
+    noteEl.textContent = r.note || '';
+    cfgEl.textContent = r.config || '';
+  });
+}
+
+function bindSsh() {
+  const saveBtn = $('#sshSaveHostBtn');
+  if (saveBtn) saveBtn.addEventListener('click', saveSshHost);
+  const rm = $('#sshRemoveHostBtn');
+  if (rm) rm.addEventListener('click', removeSshHost);
+  const run = $('#sshRunBtn');
+  if (run) run.addEventListener('click', runSshCommand);
+  const cmdInput = $('#sshCmd');
+  if (cmdInput) cmdInput.addEventListener('keydown', e => { if (e.key === 'Enter') runSshCommand(); });
+  const list = $('#sshListBtn');
+  if (list) list.addEventListener('click', sshListDir);
+  const pathInput = $('#sshPath');
+  if (pathInput) pathInput.addEventListener('keydown', e => { if (e.key === 'Enter') sshListDir(); });
+  const up = $('#sshUpBtn');
+  if (up) up.addEventListener('click', sshUpDir);
+  const pv = $('#sshPreviewBtn');
+  if (pv) pv.addEventListener('click', sshPreviewFile);
+  const dl = $('#sshDownloadBtn');
+  if (dl) dl.addEventListener('click', sshDownloadFile);
+  const test = $('#sshTestBtn');
+  if (test) test.addEventListener('click', runSshSelfTest);
+  const copy = $('#sshCopyCfgBtn');
+  if (copy) copy.addEventListener('click', async () => {
+    const cfg = $('#sshConfig');
+    const text = (cfg && cfg.textContent) || '';
+    if (!text) { toast('Run the self-test first — it produces the block.', 'info'); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Host block copied.', 'ok');
+    } catch {
+      toast('Copy failed — select the text in the block and copy it manually.', 'error');
+    }
+  });
+  const forget = $('#sshForgetKeyBtn');
+  if (forget) forget.addEventListener('click', async () => {
+    const host = sshSelectedHost();
+    if (!host) return;
+    if (!confirm('Forget the saved host key for “' + host.host + '”? The next connection from anywhere on this machine will ask again.')) return;
+    await sshBusy(forget, 'Forgetting…', async () => {
+      const r = await nexus.sshForgetKey(host.id);
+      if (r && r.ok) toast('Host key forgotten.', 'ok');
+      else toast('Could not forget the key: ' + ((r && r.error) || 'unknown'), 'error');
+    });
+  });
+  updateSshButtons();
 }
 
 /* ================================================================== */
@@ -2321,9 +2686,25 @@ const HELP_TOPICS = [
       'Appearance — dark or light theme.',
       'Background — tray behaviour for your bots.',
       'Updates — the pill at the bottom of the chat sidebar shows your version; when a newer official release exists it installs it, checksum-verified.',
+      'SSH — saved hosts, a command runner, a file browser and a connection self-test.',
       'Data — the portable data folder, chat backup and restore-defaults.'
     ],
     footer: 'Lost? Press F1 anywhere for this window.'
+  },
+  {
+    id: 'ssh',
+    group: 'Settings',
+    kicker: 'Remote shells',
+    title: 'SSH from the app',
+    lead: 'Settings → SSH runs commands and reads files on machines you already reach with ssh — and the assistant can too, through its SSH tool.',
+    bullets: [
+      'Save a host (name, user, port, optional key file). Only saved hosts are reachable — the assistant is asked before every call and can never type a host of its own.',
+      'The runner executes a command with your own ssh settings — your agent, keys and ~/.ssh/config all apply. Output and exit status come back under the command.',
+      'Browse lists a remote directory; Preview reads a file (binary files are detected, not dumped); Save to workspace copies it over with a size cap.',
+      'Run self-test scores the connection 0–100 from the effective config, your known_hosts, key permissions and one read-only probe, and prints a Host block you can paste into ~/.ssh/config.',
+      'Passwordless only: passwords are never stored or sent, so password-only accounts cannot connect from here — add a key first, exactly as you would in a terminal.'
+    ],
+    footer: 'Everything runs through the OpenSSH client already on this machine — no bundled server, no background daemon.'
   },
   {
     id: 'data',

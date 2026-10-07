@@ -19,6 +19,11 @@ const { toolsOffNote } = require('../shared/tools');
 const { realRoot } = require('./tools/paths');
 const updateService = require('./updates');
 const fs = require('node:fs');
+const path = require('node:path');
+const {
+  sanitizeRemotePath, sanitizeCommand, sanitizeSaveName, uniqueSaveName, SSH_LIMITS
+} = require('../shared/ssh');
+const sshExec = require('./ssh');
 
 // Generic chat line persisted on failure (never raw provider errors).
 const BOT_FAIL_CHAT = 'Bot run failed — check the Providers tab / your connection and run again.';
@@ -420,6 +425,84 @@ function initIpc(store) {
       reason: reason ? String(reason).slice(0, 200) : undefined
     });
     return { ok: true };
+  });
+
+  /* ---------------- ssh (system OpenSSH, saved hosts only) ---------------- */
+  /* The renderer names a host only by its settings id; the record is looked
+   * up again here, so even a compromised renderer can reach nothing the user
+   * did not already save. Paths and commands are re-validated on this side
+   * too — the browser round-trips them, nothing is trusted across the bridge. */
+
+  const sshHostsNow = () => {
+    const list = store.getSettings().sshHosts;
+    return Array.isArray(list) ? list : [];
+  };
+
+  function sshHostOrThrow(id) {
+    const host = sshHostsNow().find((h) => h && h.id === id);
+    if (!host) throw new Error('That SSH host is not in the saved list anymore — pick it again.');
+    return host;
+  }
+
+  ipcMain.handle('ssh:run', async (_e, { hostId, command } = {}) => {
+    try {
+      const cmd = sanitizeCommand(command);
+      if (!cmd) throw new Error('Type a command to run on the host.');
+      return { ok: true, ...(await sshExec.sshRun(sshHostOrThrow(hostId), cmd)) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
+
+  ipcMain.handle('ssh:list', async (_e, { hostId, path: p } = {}) => {
+    try {
+      const dir = sanitizeRemotePath(p, { allowHome: true });
+      if (dir === null) throw new Error('That does not look like a directory on the host.');
+      return { ok: true, ...(await sshExec.sshList(sshHostOrThrow(hostId), dir)) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
+
+  ipcMain.handle('ssh:read', async (_e, { hostId, path: p } = {}) => {
+    try {
+      const file = sanitizeRemotePath(p);
+      if (!file) throw new Error('Select a file to read — the path must be absolute.');
+      return { ok: true, ...(await sshExec.sshRead(sshHostOrThrow(hostId), file, SSH_LIMITS.READ_MAX)) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
+
+  ipcMain.handle('ssh:save', async (_e, { hostId, path: p, name } = {}) => {
+    try {
+      const file = sanitizeRemotePath(p);
+      if (!file) throw new Error('Select a file to save — the path must be absolute.');
+      const root = realRoot(agentSettingsNow().workspace || '');
+      if (!root) throw new Error('Set a workspace folder first — downloads land there.');
+      const safe = sanitizeSaveName(name);
+      const dest = path.join(root, uniqueSaveName(safe, (n) => fs.existsSync(path.join(root, n))));
+      const r = await sshExec.sshSave(sshHostOrThrow(hostId), file, dest, SSH_LIMITS.SAVE_MAX);
+      return { ok: true, ...r, savedAs: path.basename(dest) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
+
+  ipcMain.handle('ssh:test', async (_e, { hostId } = {}) => {
+    try {
+      return { ok: true, ...(await sshExec.sshTest(sshHostOrThrow(hostId))) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
+
+  ipcMain.handle('ssh:forgetKey', async (_e, { hostId } = {}) => {
+    try {
+      return { ok: true, ...(await sshExec.keygenForget(sshHostOrThrow(hostId))) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
   });
 
   /* ---------------- bots (local background task runners) ---------------- */

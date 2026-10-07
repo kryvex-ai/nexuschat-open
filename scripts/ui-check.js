@@ -131,10 +131,9 @@ async function attach(wsUrl) {
     });
   })()`));
   check('the settings panels are there',
-    settings.generation && settings.appearance && settings.background && settings.data && settings.agent,
+    settings.generation && settings.appearance && settings.background && settings.data && settings.agent && settings.ssh,
     JSON.stringify(settings));
   check('no mode switch survives', settings.mode === false);
-  check('no SSH panel survives', settings.ssh === false);
 
   // The page views must scroll themselves: body is overflow hidden, so a
   // view without its own scroller clips everything below the window edge —
@@ -223,8 +222,40 @@ async function attach(wsUrl) {
   })()`));
   check('the guide registry exists', help.topics.length > 0, help.topics.join(','));
   check('no removed topic survives',
-    !help.topics.some(id => ['ssh', 'account', 'chief', 'cloud', 'update', 'mode'].includes(id)), help.topics.join(','));
+    !help.topics.some(id => ['account', 'chief', 'cloud', 'update', 'mode'].includes(id)), help.topics.join(','));
+  check('the SSH guide topic is back', help.topics.includes('ssh'), help.topics.join(','));
   check('every guide chip resolves to a topic', help.missing.length === 0, help.missing.join(','));
+
+  // SSH across the whole chain: settings whitelist -> bridge -> ipc -> OpenSSH.
+  // The fixture host answers on nothing (port 9), so every call is a bounded
+  // failure — the point is the shape and the plumbing, not a live server.
+  const sshSaved = JSON.parse(await client.evaluate(`(async () => {
+    const s = await nexus.updateSettings({ sshHosts: [{ id: 'uicheck', label: 'Probe', host: '127.0.0.1', user: '', port: 9, keyFile: '' }] });
+    return JSON.stringify({ saved: !!(s.sshHosts && s.sshHosts.length === 1 && s.sshHosts[0].host === '127.0.0.1') });
+  })()`));
+  check('sshHosts persists through the settings whitelist', sshSaved.saved === true, JSON.stringify(sshSaved));
+
+  const sshTest = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.sshTest('uicheck')))()`));
+  check('ssh:test answers with a score, findings and a Host block',
+    sshTest && sshTest.ok === true && typeof sshTest.score === 'number' &&
+      Array.isArray(sshTest.findings) && /Host /.test(String(sshTest.config || '')),
+    JSON.stringify(sshTest).slice(0, 220));
+
+  const sshRun = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.sshRun('uicheck', 'true')))()`));
+  check('ssh:run answers inside its own timeout',
+    sshRun && sshRun.ok === true && typeof sshRun.code === 'number' && sshRun.ms < 30000,
+    JSON.stringify(sshRun).slice(0, 220));
+
+  const sshUnknown = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.sshRun('not-a-host', 'true')))()`));
+  check('ssh:run refuses a host that was never saved',
+    sshUnknown && sshUnknown.ok === false && /saved list/i.test(String(sshUnknown.error)),
+    JSON.stringify(sshUnknown));
+
+  const sshCleared = JSON.parse(await client.evaluate(`(async () => {
+    const s = await nexus.updateSettings({ sshHosts: [] });
+    return JSON.stringify({ cleared: Array.isArray(s.sshHosts) && s.sshHosts.length === 0 });
+  })()`));
+  check('the ssh fixture is cleaned up', sshCleared.cleared === true, JSON.stringify(sshCleared));
 
   // The whole chain, live: renderer bridge -> preload -> ipcMain -> BotStore.
   const answer = JSON.parse(await client.evaluate(`(async () => JSON.stringify(

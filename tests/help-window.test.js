@@ -88,7 +88,7 @@ test('explanations moved into the guide; the shell keeps one-liners', () => {
   assert.deepEqual(long, [], 'paragraphs that belong in the guide: ' + long.join(' | '));
   // Removed features leave nothing behind to explain. ('no subscriptions' in the
   // welcome copy is deliberate — it is the promise, not the feature.)
-  for (const gone of ['Chief', 'SSH', 'license', 'Cloud mode', 'bypass code']) {
+  for (const gone of ['Chief', 'license', 'Cloud mode', 'bypass code']) {
     assert.ok(!appJs.includes(gone), 'the guide still mentions ' + gone);
   }
 });

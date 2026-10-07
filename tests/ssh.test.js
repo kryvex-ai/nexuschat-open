@@ -6,7 +6,7 @@ const assert = require('node:assert');
 const {
   SSH_LIMITS,
   sanitizeHosts, targetFor, buildSshArgs, shQuote,
-  remoteListScript, remoteListCommand, parseRemoteList, remoteReadCommand,
+  remoteListScript, remoteListCommand, parseRemoteList, parseListDir, remoteReadCommand,
   sanitizeRemotePath, sanitizeCommand, sanitizeSaveName, uniqueSaveName,
   hostAlias, knownHostsQuery, parseSshG, listVal, csvVal, firstLine,
   auditSsh, sshConfigBlock, isProbablyText
@@ -65,11 +65,13 @@ test('shQuote survives embedded quotes', () => {
   assert.ok(cmd.startsWith('sh -c '), 'the login shell never parses our script');
   assert.ok(cmd.includes("'\\''"), 'script quotes are escaped for the outer layer');
   assert.ok(remoteListScript('').includes('"$HOME"'), 'blank path lists the login home');
+  assert.ok(remoteListScript('/srv').includes('&& pwd)'), 'the script resolves and echoes the directory first');
   assert.ok(remoteListScript("$(rm -rf /)").includes("'$(rm -rf /)'"), 'command substitution stays quoted');
 });
 
 test('parseRemoteList: directories first, then alphabetical, junk skipped', () => {
   const out = parseRemoteList([
+    'C\t/var/log',
     'f\t/var/log/zeta.log',
     'd\t/var/log/apt',
     'd\t/var/log/Alpha',
@@ -78,11 +80,13 @@ test('parseRemoteList: directories first, then alphabetical, junk skipped', () =
     'f\t/var/log/aardvark.txt'
   ].join('\n'));
   assert.deepEqual(out, [
-    { name: 'Alpha', dir: true },
-    { name: 'apt', dir: true },
-    { name: 'aardvark.txt', dir: false },
-    { name: 'zeta.log', dir: false }
-  ], 'only d/f rows survive, dirs first');
+    { name: 'Alpha', dir: true, path: '/var/log/Alpha' },
+    { name: 'apt', dir: true, path: '/var/log/apt' },
+    { name: 'aardvark.txt', dir: false, path: '/var/log/aardvark.txt' },
+    { name: 'zeta.log', dir: false, path: '/var/log/zeta.log' }
+  ], 'only d/f rows survive, dirs first, full paths kept for navigation');
+  assert.equal(parseListDir('C\t/var/log\nf\t/var/log/a'), '/var/log', 'the C header names the resolved dir');
+  assert.equal(parseListDir('f\t/var/log/a'), null, 'no header, no crash');
 });
 
 test('remote paths and names are constrained before they are used', () => {

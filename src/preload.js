@@ -68,6 +68,14 @@ contextBridge.exposeInMainWorld('nexus', {
   onToolPlan: cb => subscribe('tool:plan', cb),
   onToolResult: cb => subscribe('tool:result', cb),
 
+  /* ssh (system OpenSSH against hosts saved in Settings) */
+  sshRun: (hostId, command) => ipcRenderer.invoke('ssh:run', { hostId, command }),
+  sshList: (hostId, path) => ipcRenderer.invoke('ssh:list', { hostId, path }),
+  sshRead: (hostId, path) => ipcRenderer.invoke('ssh:read', { hostId, path }),
+  sshSave: (hostId, path, name) => ipcRenderer.invoke('ssh:save', { hostId, path, name }),
+  sshTest: hostId => ipcRenderer.invoke('ssh:test', { hostId }),
+  sshForgetKey: hostId => ipcRenderer.invoke('ssh:forgetKey', { hostId }),
+
   /* data */
   openDataFolder: () => ipcRenderer.invoke('app:dataFolder'),
   exportData: () => ipcRenderer.invoke('app:export'),

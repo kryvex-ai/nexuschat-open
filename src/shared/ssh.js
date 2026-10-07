@@ -111,16 +111,16 @@ function shQuote(s) {
 
 /**
  * A directory listing script that works under any POSIX login shell (it is
- * run via `sh -c`, so fish/csh logins are fine). Emits "d<TAB>path" or
- * "f<TAB>path" per entry. Names containing a tab or newline cannot survive
- * this framing — they are dropped by the parser, which is the standard
- * trade-off for a line protocol.
+ * run via `sh -c`, so fish/csh logins are fine). Emits a "C<TAB>resolved-dir"
+ * header, then "d<TAB>path" or "f<TAB>path" per entry. Names containing a
+ * tab or newline cannot survive this framing — they are dropped by the
+ * parser, which is the standard trade-off for a line protocol.
  * `path` of ''/null lists the login home via "$HOME" (quoted so a home
  * directory with spaces still globs correctly).
  */
 function remoteListScript(path) {
   const p = path && String(path).trim() ? shQuote(String(path).trim()) : '"$HOME"';
-  return `for e in ${p}/* ${p}/.[!.]* ${p}/..?*; do [ -e "$e" ] || [ -L "$e" ] || continue; if [ -d "$e" ]; then printf 'd\\t%s\\n' "$e"; else printf 'f\\t%s\\n' "$e"; fi; done`;
+  return `d=$(cd ${p} 2>/dev/null && pwd) || d=${p}; printf 'C\\t%s\\n' "$d"; for e in ${p}/* ${p}/.[!.]* ${p}/..?*; do [ -e "$e" ] || [ -L "$e" ] || continue; if [ -d "$e" ]; then printf 'd\\t%s\\n' "$e"; else printf 'f\\t%s\\n' "$e"; fi; done`;
 }
 
 /** The remote command line for a listing: sh is explicit, never the login shell. */
@@ -128,7 +128,7 @@ function remoteListCommand(path) {
   return 'sh -c ' + shQuote(remoteListScript(path));
 }
 
-/** Parse the listing into { name, dir }, directories first, then A→Z. */
+/** Parse the listing into { name, dir, path }, directories first, then A→Z. */
 function parseRemoteList(stdout) {
   const out = [];
   for (const line of String(stdout || '').split('\n')) {
@@ -138,10 +138,18 @@ function parseRemoteList(stdout) {
     const full = line.slice(2);
     const name = full.slice(full.lastIndexOf('/') + 1);
     if (!name) continue;
-    out.push({ name, dir: type === 'd' });
+    out.push({ name, dir: type === 'd', path: full });
   }
   out.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name)));
   return out;
+}
+
+/** The resolved directory from the listing's C header (null when absent). */
+function parseListDir(stdout) {
+  for (const line of String(stdout || '').split('\n')) {
+    if (line.startsWith('C\t')) return line.slice(2);
+  }
+  return null;
 }
 
 /** Remote read command; asks for maxBytes + 1 so truncation is detectable. */
@@ -365,7 +373,7 @@ function isProbablyText(buf) {
 module.exports = {
   SSH_LIMITS,
   sanitizeHosts, targetFor, buildSshArgs, shQuote,
-  remoteListScript, remoteListCommand, parseRemoteList, remoteReadCommand,
+  remoteListScript, remoteListCommand, parseRemoteList, parseListDir, remoteReadCommand,
   sanitizeRemotePath, sanitizeCommand, sanitizeSaveName, uniqueSaveName,
   hostAlias, knownHostsQuery, parseSshG, listVal, csvVal, firstLine,
   auditSsh, sshConfigBlock, isProbablyText
