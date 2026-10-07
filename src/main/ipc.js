@@ -91,7 +91,11 @@ function initIpc(store) {
       gate,
       // The one network tool stays off until the user switches it on in
       // Settings; everything else is allowed by class, not individually.
-      enabled: (tool) => !(tool.name === 'http_fetch' && a.allowNetwork !== true)
+      enabled: (tool) => !(tool.name === 'http_fetch' && a.allowNetwork !== true),
+      sshHosts: () => {
+        const l = store.getSettings().sshHosts;
+        return Array.isArray(l) ? l : [];
+      }
     });
   }
 

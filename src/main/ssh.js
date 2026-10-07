@@ -23,7 +23,7 @@ const path = require('node:path');
 const {
   SSH_LIMITS, buildSshArgs, remoteListCommand, parseRemoteList, parseListDir,
   remoteReadCommand, sshConfigBlock, knownHostsQuery, auditSsh, parseSshG,
-  isProbablyText, firstLine, listVal
+  isProbablyText, firstLine, listVal, sanitizeCommand
 } = require('../shared/ssh');
 
 const NO_SSH = 'OpenSSH (ssh) was not found on this machine. Install it first — on Windows: Settings → Apps → Optional features → OpenSSH Client.';
@@ -45,7 +45,7 @@ function prep(host) {
  * check `code` — only on "could not start" or "no ssh on this box".
  * Output is kept as a Buffer so binary detection can look at raw bytes.
  */
-function run(bin, args, { timeoutMs = 30000, maxBytes = SSH_LIMITS.OUTPUT_MAX } = {}) {
+function spawnBounded(bin, args, { timeoutMs = 30000, maxBytes = SSH_LIMITS.OUTPUT_MAX } = {}) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     let child;
@@ -103,8 +103,8 @@ function run(bin, args, { timeoutMs = 30000, maxBytes = SSH_LIMITS.OUTPUT_MAX } 
 const errText = (r) => firstLine(r.stderr.length ? r.stderr.toString('utf8') : r.stdout.toString('utf8'));
 
 /** Run a command on the host. Explicit user action: pins the key on first use. */
-async function sshRun(host, command) {
-  const r = await run('ssh', buildSshArgs(prep(host), { acceptNew: true, command }), { timeoutMs: SSH_LIMITS.RUN_TIMEOUT_MS });
+async function sshRun(host, command, timeoutMs = SSH_LIMITS.RUN_TIMEOUT_MS) {
+  const r = await spawnBounded('ssh', buildSshArgs(prep(host), { acceptNew: true, command }), { timeoutMs });
   return {
     code: r.code, timedOut: r.timedOut, ms: r.ms,
     stdout: r.stdout.toString('utf8').slice(0, SSH_LIMITS.OUTPUT_MAX),
@@ -119,7 +119,7 @@ async function sshRun(host, command) {
  */
 async function sshProbe(host) {
   try {
-    const r = await run('ssh', buildSshArgs(prep(host), { command: 'true', connectTimeoutS: 6 }), { timeoutMs: SSH_LIMITS.PROBE_TIMEOUT_MS });
+    const r = await spawnBounded('ssh', buildSshArgs(prep(host), { command: 'true', connectTimeoutS: 6 }), { timeoutMs: SSH_LIMITS.PROBE_TIMEOUT_MS });
     if (r.timedOut) return { ok: false, ms: r.ms, error: 'No answer within ' + Math.round(SSH_LIMITS.PROBE_TIMEOUT_MS / 1000) + 's.' };
     if (r.code === 0) return { ok: true, ms: r.ms };
     return { ok: false, ms: r.ms, error: errText(r) || 'Connection failed (exit ' + r.code + ').' };
@@ -130,14 +130,14 @@ async function sshProbe(host) {
 
 /** `ssh -G` — the effective config for this host, no network involved. */
 async function sshEffectiveConfig(host) {
-  const r = await run('ssh', buildSshArgs(prep(host), { flag: '-G' }), { timeoutMs: 10000 });
+  const r = await spawnBounded('ssh', buildSshArgs(prep(host), { flag: '-G' }), { timeoutMs: 10000 });
   if (r.timedOut || r.code !== 0) throw new Error(errText(r) || 'ssh -G failed — check the host name.');
   return parseSshG(r.stdout.toString('utf8'));
 }
 
 async function keygenFind(host) {
   try {
-    const r = await run('ssh-keygen', ['-F', knownHostsQuery(host)], { timeoutMs: 5000, maxBytes: 65536 });
+    const r = await spawnBounded('ssh-keygen', ['-F', knownHostsQuery(host)], { timeoutMs: 5000, maxBytes: 65536 });
     return r.code === 0 && r.stdout.toString('utf8').trim().length > 0;
   } catch {
     return false;
@@ -145,7 +145,7 @@ async function keygenFind(host) {
 }
 
 async function keygenForget(host) {
-  const r = await run('ssh-keygen', ['-R', knownHostsQuery(host)], { timeoutMs: 5000, maxBytes: 65536 });
+  const r = await spawnBounded('ssh-keygen', ['-R', knownHostsQuery(host)], { timeoutMs: 5000, maxBytes: 65536 });
   if (r.code !== 0 && r.stderr.toString('utf8').trim()) throw new Error(errText(r));
   return { ok: r.code === 0 };
 }
@@ -165,7 +165,7 @@ function statKey(host) {
 }
 
 async function sshList(host, remotePath) {
-  const r = await run('ssh', buildSshArgs(prep(host), { acceptNew: true, command: remoteListCommand(remotePath) }), { timeoutMs: SSH_LIMITS.LIST_TIMEOUT_MS });
+  const r = await spawnBounded('ssh', buildSshArgs(prep(host), { acceptNew: true, command: remoteListCommand(remotePath) }), { timeoutMs: SSH_LIMITS.LIST_TIMEOUT_MS });
   const text = r.stdout.toString('utf8');
   if (r.code !== 0 && !text) throw new Error(errText(r) || 'Listing failed (exit ' + r.code + ').');
   const entries = parseRemoteList(text).slice(0, 2000);
@@ -173,7 +173,7 @@ async function sshList(host, remotePath) {
 }
 
 async function sshRead(host, remotePath, maxBytes = SSH_LIMITS.READ_MAX) {
-  const r = await run('ssh', buildSshArgs(prep(host), { acceptNew: true, command: remoteReadCommand(remotePath, maxBytes) }), { timeoutMs: SSH_LIMITS.READ_TIMEOUT_MS });
+  const r = await spawnBounded('ssh', buildSshArgs(prep(host), { acceptNew: true, command: remoteReadCommand(remotePath, maxBytes) }), { timeoutMs: SSH_LIMITS.READ_TIMEOUT_MS });
   const buf = r.stdout;
   if (r.code !== 0 && !buf.length) throw new Error(errText(r) || 'Read failed (exit ' + r.code + ').');
   const truncated = buf.length > maxBytes;
@@ -250,4 +250,47 @@ async function sshTest(host) {
   };
 }
 
-module.exports = { sshRun, sshProbe, sshEffectiveConfig, keygenFind, keygenForget, statKey, sshList, sshRead, sshSave, sshTest, expandHome };
+/**
+ * The model's `host` argument, resolved against the saved list: id first,
+ * then label, then the address itself. Nothing else can match, so a model
+ * that invents a host simply gets an error naming the list it must pick from.
+ */
+function resolveHost(hosts, want) {
+  const s = String(want == null ? '' : want).trim();
+  if (!s) return null;
+  const low = s.toLowerCase();
+  return hosts.find(h => h && h.id === s)
+    || hosts.find(h => h && String(h.label || '').toLowerCase() === low)
+    || hosts.find(h => h && String(h.host || '').toLowerCase() === low)
+    || null;
+}
+
+/** ssh_exec — the permission gate has already asked; this only runs it. */
+async function sshExecTool(args, ctx) {
+  const list = typeof ctx.sshHosts === 'function' ? ctx.sshHosts() : [];
+  const host = resolveHost(Array.isArray(list) ? list : [], args.host);
+  if (!host) {
+    throw new Error('No saved host matches "' + String(args.host || '').slice(0, 80)
+      + '". Hosts live in Settings → SSH; add one there and use its id or label.');
+  }
+  const command = sanitizeCommand(args.command);
+  if (!command) throw new Error('No command to run.');
+  const floor = SSH_LIMITS.TOOL_MIN_MS;
+  const ms = Math.min(SSH_LIMITS.TOOL_MAX_MS, Math.max(floor, Math.floor(Number(args.timeout_ms) || SSH_LIMITS.RUN_TIMEOUT_MS)));
+  const r = await sshRun(host, command, ms);
+  // Same shape the local shell tool returns, so the model reads both alike.
+  const head = `exit ${r.code}${r.timedOut ? ` — killed after ${Math.round(ms / 1000)}s` : ''}\n$ ${command}\n`;
+  if (!r.stdout && !r.stderr) return head + '(no output)';
+  return head + (r.stdout ? r.stdout : '') + (r.stderr ? '\n[stderr]\n' + r.stderr : '');
+}
+
+/** The executor shape src/main/tools/index.js dispatches on. */
+const HANDLERS = { ssh_exec: sshExecTool };
+
+async function run(name, args, ctx) {
+  const handler = HANDLERS[name];
+  if (!handler) throw new Error('ssh has no tool called ' + name);
+  return handler(args || {}, ctx || {});
+}
+
+module.exports = { sshRun, sshProbe, sshEffectiveConfig, keygenFind, keygenForget, statKey, sshList, sshRead, sshSave, sshTest, expandHome, HANDLERS, run };

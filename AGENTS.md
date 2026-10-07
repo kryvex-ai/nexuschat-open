@@ -43,9 +43,11 @@ src/main/       Electron main: ipc.js (every channel), store.js (settings +
                 chats persistence), bots.js (validation, BotStore, BotRunner
                 scheduler), agent.js (the tool loop), providers/ (HTTP
                 transport per provider kind), tools/ (executors, the
-                permission gate, workspace confinement), secure.js
-                (safeStorage adapter for keys at rest), updates.js (release
-                check, checksum-verified install)
+                permission gate, workspace confinement), ssh.js (system
+                OpenSSH: the runner, file browser, self-test and the
+                ssh_exec executor), secure.js (safeStorage adapter for keys
+                at rest), updates.js (release check, checksum-verified
+                install)
 src/preload.js  the nexus.* bridge — one function per channel, nothing else
 src/renderer/   app.js (all UI), index.html, theme.css, logo.png
                 (generated — do not edit, run `npm run icon`)
@@ -68,7 +70,7 @@ The model asks for a tool by writing one `[[tool {…}]]` directive line in its
 reply; `src/shared/directives.js` pulls those out, `src/shared/tools.js` checks
 the name and every argument against the registry, `src/main/tools/permissions.js`
 decides whether to ask the user, and only then does an executor in
-`src/main/tools/` touch anything. `src/main/agent.js` loops: result back into the
+`src/main/tools/` (or `src/main/ssh.js` for `ssh_exec`) touch anything. `src/main/agent.js` loops: result back into the
 prompt, model decides the next step, up to the step cap. Two invariants are worth
 keeping in mind when you touch it: **dangerous tools are never remembered**, and
 **tool results are neutralized before they go back into a prompt**, so a file
@@ -91,7 +93,7 @@ exists to catch a channel or element that exists on one side only.
 - Comments and copy in the app are written for the person reading them, not for a
   changelog.
 - The privacy promise is a feature: no telemetry, no backend, no network calls
-  except to the provider the user configured.
+  except to the provider the user configured and the SSH hosts the user saved (over their own ssh, BatchMode — no passwords).
 
 ## Shipping
 

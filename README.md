@@ -25,8 +25,12 @@ computer. No accounts, no telemetry, no servers, no strings.
 - **Skills & plugins** — prompt-level instruction packs (Writing, Developer,
   Operations, Accuracy). They shape how answers are written; they never run code.
 - **Tools** — let the assistant work in one folder you choose: read, search and
-  edit files, run your commands, use git. 24 tools, and every write, delete,
+  edit files, run your commands, use git. 25 tools, and every write, delete,
   shell command and network call asks you first.
+- **SSH** — saved hosts, a command runner, a remote file browser and a
+  connection self-test (score, findings, a ready-made `Host` block) in
+  Settings → SSH. The assistant can run on those hosts too — only those, never a
+  host it invents — through the OpenSSH client already on your machine.
 - **Guide window** — a `Help` chip, a `?` on every page and `F1` anywhere open one
   window with the full explanations, so the screens stay clean.
 - **Stays out of the way** — system tray with optional run-in-background, dark/light
@@ -85,7 +89,7 @@ text and nothing else — nothing is downloaded and no code ever runs.
 ### Tools: letting the assistant work in your project
 
 Switch on **Settings → Assistant** and choose one folder. From then on the model
-can use 24 tools inside it — and everything it does goes through you.
+can use 25 tools inside it — and everything it does goes through you.
 
 | What it can do | Tools |
 |---|---|
@@ -93,6 +97,7 @@ can use 24 tools inside it — and everything it does goes through you.
 | change files | `write_file` `edit_file` `multi_edit` `append_file` `create_dir` `move_file` `copy_file` |
 | work with git | `git_status` `git_diff` `git_log` `git_show` `git_stage` `git_commit` `git_branch` |
 | run things | `delete_file` `run_command` `http_fetch` |
+| reach a remote host | `ssh_exec` — hosts saved in Settings → SSH only |
 
 **How permission works — nothing is ever accepted automatically:**
 
@@ -115,6 +120,9 @@ can use 24 tools inside it — and everything it does goes through you.
   `--upload-pack`, `--ext-diff`, …) are refused outright.
 - `http_fetch` is off until you switch on *Network tools*, and asks every time
   when you do. Everything else stays on this machine.
+- `ssh_exec` runs through the SSH hosts you saved in **Settings → SSH** — the
+  model supplies only a saved host's id or label, never an address, and it asks
+  every time like every other careful tool. Passwords are never involved.
 - One message can chain up to **Max tool steps** (default 12) of these rounds.
 
 The **Tools** switch above the composer decides whether a chat may use them at
@@ -146,6 +154,7 @@ nexuschat-open/
 │   │                     #   bots.js (scheduler + store), agent.js (the tool
 │   │                     #   loop), providers/ (transport), tools/ (executors,
 │   │                     #   permission gate, workspace confinement),
+│   │                     #   ssh.js (system OpenSSH: runner, browser, self-test),
 │   │                     #   secure.js (key encryption at rest)
 │   ├── preload.js        # the nexus.* bridge — one function per channel, nothing else
 │   ├── renderer/         # app.js (all UI), index.html, theme.css, logo.png

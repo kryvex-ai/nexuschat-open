@@ -31,6 +31,8 @@ const SSH_LIMITS = {
   LIST_TIMEOUT_MS: 15000,
   READ_TIMEOUT_MS: 20000,
   SAVE_TIMEOUT_MS: 60000,
+  TOOL_MIN_MS: 5000,     // ssh_exec timeout clamp
+  TOOL_MAX_MS: 600000,   //   … and the ceiling, same as the local shell tool
   OUTPUT_MAX: 262144,   // runner output shown in the panel
   READ_MAX: 524288,     // preview cap (head asks for one byte more)
   SAVE_MAX: 10485760,   // download-to-workspace cap

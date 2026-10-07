@@ -310,6 +310,18 @@ const TOOLS = [
       headers: 'object? — extra headers, e.g. { "accept": "application/json" }'
     },
     returns: 'Status line, then the response body (truncated).'
+  },
+  {
+    name: 'ssh_exec',
+    risk: RISK.DANGER,
+    group: 'ssh',
+    summary: 'Run a command on a remote machine over SSH, through a host saved in Settings → SSH. Passwords are never involved — keys or your agent, as in a terminal.',
+    args: {
+      host: 'string — the saved host: its id or its label, from Settings → SSH',
+      command: 'string — the command line, run on the remote machine',
+      timeout_ms: 'number? — kill it after this long (default 60000, max 600000)'
+    },
+    returns: 'Exit code, stdout and stderr (truncated).'
   }
 ];/* ---------------- helpers ---------------- */
 
@@ -380,6 +392,7 @@ function callSummary(tool, args = {}) {
     case 'git_branch': return `git branch ${a.action || 'list'}${a.name ? ' ' + a.name : ''}`;
     case 'delete_file': return `Delete ${a.path}`;
     case 'run_command': return `Run: ${a.command}`;
+    case 'ssh_exec': return `On ${a.host || '?'}: ${a.command || ''}`;
     case 'http_fetch': return `Fetch ${a.url}`;
     default: return tool.name;
   }
@@ -486,7 +499,7 @@ function validateArgs(tool, raw) {
 function manual() {
   const titles = {
     files: 'Files', search: 'Search', project: 'Project',
-    git: 'Version control', shell: 'Shell', net: 'Network'
+    git: 'Version control', shell: 'Shell', net: 'Network', ssh: 'SSH'
   };
   const byGroup = new Map();
   for (const t of TOOLS) {
@@ -517,6 +530,7 @@ function manual() {
     '- Do it yourself: when the user asks you to find, read, run, check, build or search for something, call a tool and report the result — never answer with commands or steps for the user to run instead.',
     '- Anything that writes, deletes, runs a command or uses the network asks the user first. Say what you are about to do, and explain what changed when the results arrive.',
     '- Paths are relative to the project root. Never guess a path you have not listed or read.',
+    '- SSH runs only on hosts saved in Settings → SSH: pass the host id or label in `host`. You cannot type an address, a user or a password yourself.',
     '- The file and search tools stay inside the project root. For anything outside it — another folder or the whole machine — use run_command: only its working directory is pinned to the root, the command itself can go anywhere, and the user approves it first.',
     '',
     ...groups

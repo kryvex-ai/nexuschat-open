@@ -18,10 +18,12 @@ const { toolByName, toolNames, validateArgs, callSummary, signature, LIMITS, RIS
 const { extractDirectives, neutralizeDirectives } = require('../../shared/directives');
 const fsTools = require('./fs');
 const shellTools = require('./shell');
+const sshTools = require('../ssh');
 const { PermissionGate, DECISION } = require('./permissions');
 
 const FILE_TOOLS = new Set(Object.keys(fsTools.HANDLERS));
 const SHELL_TOOLS = new Set(Object.keys(shellTools.HANDLERS));
+const SSH_TOOLS = new Set(Object.keys(sshTools.HANDLERS));
 
 /** Pull `[[tool {…}]]` directives out of a model reply. */
 function parseToolCalls(text) {
@@ -43,6 +45,8 @@ function describeCall(tool, args, root) {
       preview = `$ ${args.command}`;
     } else if (tool.name === 'http_fetch') {
       preview = `${String(args.method || 'GET').toUpperCase()} ${args.url}`;
+    } else if (tool.name === 'ssh_exec') {
+      preview = `${args.host}: $ ${args.command}`;
     } else if (tool.name === 'delete_file') {
       const abs = path.resolve(root, String(args.path || ''));
       preview = fs.existsSync(abs)
@@ -89,14 +93,16 @@ function catalog() {
   });
 }class ToolHost {
   /**
-   * root    — workspace directory (already validated by the caller)
-   * gate    — PermissionGate
-   * enabled — (tool) => boolean, so Settings can switch a whole class off
+   * root     — workspace directory (already validated by the caller)
+   * gate     — PermissionGate
+   * enabled  — (tool) => boolean, so Settings can switch a whole class off
+   * sshHosts — () => saved SSH hosts; ssh_exec can only ever reach these
    */
-  constructor({ root, gate, enabled = null } = {}) {
+  constructor({ root, gate, enabled = null, sshHosts = null } = {}) {
     this.root = root;
     this.gate = gate || new PermissionGate({ ask: null });
     this.enabled = enabled;
+    this.sshHosts = sshHosts;
   }
 
   allowed(tool) {
@@ -138,8 +144,10 @@ function catalog() {
     }
 
     try {
-      const ctx = { root: this.root };
-      const handler = FILE_TOOLS.has(tool.name) ? fsTools : shellTools;
+      const ctx = { root: this.root, sshHosts: this.sshHosts };
+      const handler = FILE_TOOLS.has(tool.name) ? fsTools
+        : SSH_TOOLS.has(tool.name) ? sshTools
+          : shellTools;
       const raw = await handler.run(tool.name, v.args, ctx);
       return {
         ...base,
