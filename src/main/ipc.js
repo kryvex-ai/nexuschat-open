@@ -16,6 +16,7 @@ const { BotStore, BotRunner, validateBotInput, buildBotChatMessages, parseBotDir
 const { ToolHost, PermissionGate, DECISION, catalog } = require('./tools');
 const { runAgentTurn } = require('./agent');
 const { realRoot } = require('./tools/paths');
+const updateService = require('./updates');
 const fs = require('node:fs');
 
 // Generic chat line persisted on failure (never raw provider errors).
@@ -162,6 +163,14 @@ function initIpc(store) {
   ipcMain.handle('settings:set', (_e, patch) => store.updateSettings(patch || {}));
 
   ipcMain.handle('settings:reset', () => ({ ok: true, settings: store.resetSettings() }));
+
+  /* ---------------- updates ---------------- */
+
+  ipcMain.handle('update:check', () => updateService.checkForUpdate());
+
+  ipcMain.handle('update:install', () => updateService.installUpdate(p => emit('update:progress', p)));
+
+  ipcMain.handle('update:release', () => updateService.openReleasePage());
 
   /* ---------------- skills ---------------- */
 

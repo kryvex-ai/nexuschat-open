@@ -236,6 +236,27 @@ async function attach(wsUrl) {
   const grants = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.clearAgentGrants()))()`));
   check('agent:clearGrants answers', grants && grants.ok === true, JSON.stringify(grants));
 
+  // The update pill: it lives in the sidebar footer, stays honest in a source
+  // run (no network, no install to replace) and the launch popup starts shut.
+  const upd = JSON.parse(await client.evaluate(`(() => {
+    const pill = document.getElementById('updatePill');
+    const modal = document.getElementById('updateModal');
+    return JSON.stringify({
+      inSidebar: !!(pill && pill.closest('#sidebar')),
+      text: pill ? pill.textContent.trim() : '',
+      available: !!(pill && pill.classList.contains('available')),
+      modalHidden: !!(modal && modal.classList.contains('hidden'))
+    });
+  })()`));
+  check('the update pill sits in the sidebar footer', upd.inSidebar === true, upd.text);
+  check('a source run never advertises an install', upd.available === false, upd.text);
+  check('the update popup starts closed', upd.modalHidden === true);
+  const updCheck = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.updateCheck()))()`));
+  check('update:check answers and stays offline in dev',
+    !!updCheck && updCheck.skipped === true && updCheck.updateAvailable === false
+      && typeof updCheck.current === 'string',
+    JSON.stringify(updCheck));
+
   await sleep(200);
   check('nothing threw in the renderer', crashes.length === 0, crashes.join(' | '));
 

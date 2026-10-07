@@ -51,18 +51,21 @@ async function boot() {
   bindSkills();
   bindProviderSearch();
   bindAgent();
+  bindUpdates();
   nexus.onBotChanged(() => loadBots());
   await refreshConversations();
   renderMessages();
   renderProviders();
   renderSettings();
   // First-launch intro first; the background-mode prompt waits until it is
-  // dismissed so the two overlays never stack.
-  maybeShowIntro(() => maybeShowBackgroundPrompt());
+  // dismissed so the two overlays never stack. The update nudge joins that
+  // chain for the same reason: one overlay at a time.
+  maybeShowIntro(() => { maybeShowBackgroundPrompt(); maybePromptUpdate(); });
   await loadBots();
   await loadSkills();
   loadAgent();
-  nexus.appInfo().then(info => { appInfo = info; renderSettings(); }).catch(() => {});
+  nexus.appInfo().then(info => { appInfo = info; renderSettings(); paintUpdatePill(); }).catch(() => {});
+  checkForUpdates(true);
   setInterval(() => { if (document.hidden) return; if ($('#view-bots').classList.contains('active')) loadBots(true); }, 10000);
   paintModelPicker();
 }
@@ -1968,6 +1971,131 @@ function bindSkills() {
 /* ================================================================== */
 /* Intro / onboarding — first launch only (settings.introDone)        */
 /* ================================================================== */
+/* ---------------- updates ----------------
+ * The pill in the sidebar's bottom-left is permanent: it shows the running
+ * version, turns into an install action once a newer official release has
+ * been verified available, and carries the download progress. The launch
+ * popup is a one-time nudge per release version — "Later" (or Escape)
+ * remembers the version, so the same update never interrupts again.
+ * All the deciding happens in the main process; the renderer only paints. */
+
+let updateInfo = null;   // verified decision from update:check, null = up to date
+let updateBusy = false;
+
+function paintUpdatePill() {
+  const pill = $('#updatePill');
+  const text = $('#updatePillText');
+  if (!pill || updateBusy) return;
+  if (updateInfo && updateInfo.updateAvailable) {
+    pill.classList.add('available');
+    pill.title = 'Install version ' + updateInfo.latest;
+    text.textContent = 'v' + updateInfo.latest + ' · Install';
+  } else {
+    pill.classList.remove('available');
+    pill.title = 'Check for updates';
+    text.textContent = appInfo && appInfo.version ? 'v' + appInfo.version : 'Updates';
+  }
+}
+
+async function checkForUpdates(atLaunch) {
+  let info;
+  try { info = await nexus.updateCheck(); } catch { return; }
+  if (!info) return;
+  // Source checkout / CI: no install to replace, so nothing to show.
+  if (info.skipped) {
+    if (!atLaunch) toast('Updates are installed only in the packaged app — you are running from source.');
+    return;
+  }
+  updateInfo = info.updateAvailable ? info : null;
+  paintUpdatePill();
+  if (atLaunch) { maybePromptUpdate(); return; }
+  if (!info.checked) toast('Could not reach GitHub to check for updates.', 'warn');
+  else if (!info.updateAvailable) toast('You are on the latest version (v' + info.current + ').', 'ok');
+  // An update found by a manual check paints itself on the pill.
+}
+
+function maybePromptUpdate() {
+  if (!updateInfo || !updateInfo.updateAvailable) return;
+  if (!state.settings.introDone) return;                          // first-run intro owns the screen
+  const bg = $('#bgModal');
+  if (bg && !bg.classList.contains('hidden')) return;             // background-mode prompt is up
+  if (helpIsOpen()) return;                                       // the guide owns Escape
+  if (state.settings.dismissedUpdate === updateInfo.latest) return; // asked once for this version
+  const modal = $('#updateModal');
+  if (!modal.classList.contains('hidden')) return;
+  $('#updateModalBody').textContent = 'Version ' + updateInfo.latest
+    + ' is ready to install — you are on ' + updateInfo.current + '.';
+  modal.classList.remove('hidden');
+}
+
+function closeUpdateModal() {
+  $('#updateModal').classList.add('hidden');
+}
+
+async function dismissUpdateModal() {
+  closeUpdateModal();
+  if (!updateInfo) return;
+  try {
+    // Persisted per version: the next release prompts again, this one never does.
+    state.settings = await nexus.updateSettings({ dismissedUpdate: updateInfo.latest });
+  } catch { /* next launch will ask again */ }
+}
+
+async function runUpdateInstall() {
+  if (updateBusy) return;
+  updateBusy = true;
+  const pill = $('#updatePill');
+  const text = $('#updatePillText');
+  pill.classList.add('busy');
+  text.textContent = 'Starting…';
+  let res = null;
+  try { res = await nexus.updateInstall(); } catch { res = null; }
+  if (res && res.ok) { text.textContent = 'Installing…'; return; } // app is on its way out
+  updateBusy = false;
+  pill.classList.remove('busy');
+  paintUpdatePill();
+  if (res && res.reason === 'unsupported') {
+    await nexus.updateOpenRelease();
+    toast('This build installs from the release page — opened in your browser.', 'info');
+  } else if (res && res.reason === 'cancelled') {
+    /* the native dialog already said it */
+  } else if (res && (res.reason === 'checksum' || res.reason === 'no-checksums')) {
+    toast('The update could not be verified, so it was not installed. Get it from the release page instead.', 'warn');
+  } else if (res && res.reason === 'download') {
+    toast('The update download failed — try again.', 'warn');
+  } else if (res && res.reason === 'no-update') {
+    updateInfo = null;
+    paintUpdatePill();
+  } else {
+    toast('The update could not be started.', 'warn');
+  }
+}
+
+function setUpdateProgress({ phase, percent } = {}) {
+  if (!updateBusy) return;
+  $('#updatePillText').textContent = phase === 'download'
+    ? 'Downloading… ' + (percent || 0) + '%'
+    : phase === 'verify' ? 'Verifying…' : 'Installing…';
+}
+
+function bindUpdates() {
+  $('#updatePill').addEventListener('click', () => {
+    if (updateBusy) return;
+    if (updateInfo && updateInfo.updateAvailable) runUpdateInstall();
+    else checkForUpdates(false);
+  });
+  $('#updateInstallBtn').addEventListener('click', () => { closeUpdateModal(); runUpdateInstall(); });
+  $('#updateLaterBtn').addEventListener('click', dismissUpdateModal);
+  if (nexus.onUpdateProgress) nexus.onUpdateProgress(setUpdateProgress);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const modal = $('#updateModal');
+    if (modal.classList.contains('hidden')) return;
+    if (!$('#toolModal').classList.contains('hidden')) return;   // permission prompt keeps Escape
+    dismissUpdateModal();                                        // Escape = Later, never a trap
+  });
+}
+
 function maybeShowIntro(done) {
   const finish = () => {
     const el = $('#intro');
@@ -2014,6 +2142,7 @@ async function setBackgroundMode(on, fromPrompt) {
   toast(on
     ? 'Background mode on — closing the window keeps your bots working.'
     : 'Background mode off — bots run only while the app is open.', 'ok');
+  if (fromPrompt) maybePromptUpdate();   // the update nudge was waiting its turn
 }
 
 function renderBackgroundSetting() {
@@ -2171,6 +2300,7 @@ const HELP_TOPICS = [
       'Generation — system prompt, temperature, max tokens.',
       'Appearance — dark or light theme.',
       'Background — tray behaviour for your bots.',
+      'Updates — the pill at the bottom of the chat sidebar shows your version; when a newer official release exists it installs it, checksum-verified.',
       'Data — the portable data folder, chat backup and restore-defaults.'
     ],
     footer: 'Lost? Press F1 anywhere for this window.'

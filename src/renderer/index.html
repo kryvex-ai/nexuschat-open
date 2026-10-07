@@ -30,6 +30,12 @@
       <aside id="sidebar">
         <button id="newChatBtn" class="primary block"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New chat</button>
         <div id="convList"></div>
+        <div class="sidebar-foot update-foot">
+          <button type="button" id="updatePill" class="update-pill" title="Check for updates">
+            <span class="update-pill-dot" aria-hidden="true"></span>
+            <span id="updatePillText">Updates</span>
+          </button>
+        </div>
       </aside>
       <section id="chatPane">
         <div id="chatHeader">
@@ -238,6 +244,19 @@
         <button id="toolDenyBtn" class="danger">Deny</button>
         <button id="toolAllowBtn" class="primary">Allow once</button>
         <button id="toolAlwaysBtn" class="ghost">Allow for this session</button>
+      </div>
+    </div>
+  </div>
+  <div id="updateModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="updateModalTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="updateModalTitle">Update available</h2>
+      </div>
+      <p id="updateModalBody" class="muted"></p>
+      <p class="muted small">The download comes from the official GitHub release and is checked against its SHA-256 checksum before anything runs.</p>
+      <div class="row">
+        <button id="updateLaterBtn" class="ghost">Later</button>
+        <button id="updateInstallBtn" class="primary">Install now</button>
       </div>
     </div>
   </div>

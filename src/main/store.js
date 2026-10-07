@@ -155,7 +155,7 @@ class Store {
   getSettings() { return { ...this.settings, providerConfigs: undefined }; }
 
   updateSettings(patch = {}) {
-    const allowed = ['theme', 'temperature', 'maxTokens', 'systemPrompt', 'activeChatModel', 'runInBackground', 'introDone', 'enabledPlugins', 'enabledSkills', 'agent'];
+    const allowed = ['theme', 'temperature', 'maxTokens', 'systemPrompt', 'activeChatModel', 'runInBackground', 'introDone', 'enabledPlugins', 'enabledSkills', 'agent', 'dismissedUpdate'];
     const clean = {};
     for (const k of allowed) {
       if (!(k in patch)) continue;
@@ -190,6 +190,11 @@ class Store {
           break;
         case 'introDone':
           if (v === true || v === false) clean[k] = v;
+          break;
+        case 'dismissedUpdate':
+          // Only a version the app could actually have shown, or null to clear:
+          // a stray value must never be able to mute future prompts.
+          if (v === null || (typeof v === 'string' && /^\d+\.\d+\.\d+$/.test(v))) clean[k] = v;
           break;
         default:
           if (typeof v === 'string' || v === null) clean[k] = v;

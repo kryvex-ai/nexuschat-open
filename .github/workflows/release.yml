@@ -36,6 +36,18 @@ jobs:
           # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
+      # The app verifies this file before running a downloaded installer, so
+      # it has to travel with the release — no checksum, no install.
+      - name: Write SHA256SUMS.txt
+        run: |
+          Set-Location dist
+          $lines = Get-ChildItem *.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          [System.IO.File]::WriteAllLines("$PWD/SHA256SUMS.txt", $lines)
+          Get-Content SHA256SUMS.txt
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -43,6 +55,7 @@ jobs:
           path: |
             dist/*.exe
             dist/latest.yml
+            dist/SHA256SUMS.txt
 
       - name: Attach to GitHub Release (tag pushes only)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -51,4 +64,5 @@ jobs:
           files: |
             dist/*.exe
             dist/latest.yml
+            dist/SHA256SUMS.txt
           generate_release_notes: true

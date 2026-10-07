@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('nexus', {
   updateSettings: patch => ipcRenderer.invoke('settings:set', patch),
   resetSettings: () => ipcRenderer.invoke('settings:reset'),
 
+  /* updates */
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateOpenRelease: () => ipcRenderer.invoke('update:release'),
+  onUpdateProgress: cb => subscribe('update:progress', cb),
+
   /* skills & plugins (prompt-level) */
   skillsState: () => ipcRenderer.invoke('skills:state'),
   setSkills: patch => ipcRenderer.invoke('skills:set', patch),

@@ -44,14 +44,16 @@ src/main/       Electron main: ipc.js (every channel), store.js (settings +
                 scheduler), agent.js (the tool loop), providers/ (HTTP
                 transport per provider kind), tools/ (executors, the
                 permission gate, workspace confinement), secure.js
-                (safeStorage adapter for keys at rest)
+                (safeStorage adapter for keys at rest), updates.js (release
+                check, checksum-verified install)
 src/preload.js  the nexus.* bridge — one function per channel, nothing else
 src/renderer/   app.js (all UI), index.html, theme.css, logo.png
                 (generated — do not edit, run `npm run icon`)
 src/shared/     brand.js (rename the app here), providers.js (registry),
                 skills.js (prompt-level skill registry + composer),
                 tools.js (the tool registry — names, args, risk classes),
-                directives.js (the [[tool …]] / [[bot …]] scanner)
+                directives.js (the [[tool …]] / [[bot …]] scanner),
+                updates.js (what counts as a safe update)
 scripts/        run-linux.sh (headless), ui-check.js (live UI over CDP),
                 gen-icon.js + png.js (the icon generator and its PNG codec)
 brand/          kryvex-logo.png — the source every app logo is generated from

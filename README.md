@@ -4,8 +4,7 @@
 Linux — bring your own provider key, and everything (chats, bots, keys) stays on your
 computer. No accounts, no telemetry, no servers, no strings.
 
-[![CI](https://github.com/your-org/nexuschat-open/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/nexuschat-open/actions/workflows/ci.yml)
-<!-- ^ Update `your-org/nexuschat-open` in this badge (2 places) to <owner>/<repo> after pushing. -->
+[![CI](https://github.com/kryvex-ai/nexuschat-open/actions/workflows/ci.yml/badge.svg)](https://github.com/kryvex-ai/nexuschat-open/actions/workflows/ci.yml)
 
 ## What it does
 
@@ -16,6 +15,9 @@ computer. No accounts, no telemetry, no servers, no strings.
   any OpenAI-compatible endpoint (LM Studio, vLLM, llama.cpp…). Every base URL and
   model list is editable, so a provider change never needs a new build.
 - **Local models** — install Ollama, pull a model, and chat works with Wi-Fi off.
+- **Safe updates** — a pill in the sidebar's bottom-left spots a new official
+  GitHub release, downloads the installer, verifies it against the release's own
+  SHA-256 checksum and only then runs it — every install is confirmed by you.
 - **Bots** — a bot is a named task that runs on a schedule (every minute to weekly)
   while the app is open or in the tray. Each bot has its own chat: scheduled results
   land there, and you can tell it "run every 30 minutes" or "pause for now" and it
