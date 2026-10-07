@@ -9,7 +9,8 @@ computer. No accounts, no telemetry, no servers, no strings.
 
 ## What it does
 
-- **Chat** — streaming replies, Markdown, stop and regenerate, conversation history.
+- **Chat** — streaming replies, Markdown, stop and regenerate, conversation history,
+  and a searchable model picker grouped by provider.
 - **Your provider, your key** — OpenAI, xAI (Grok), Anthropic (Claude), Google
   (Gemini), Mistral, Groq, DeepSeek, OpenRouter, Nous Research, local **Ollama**, or
   any OpenAI-compatible endpoint (LM Studio, vLLM, llama.cpp…). Every base URL and
@@ -60,9 +61,11 @@ npm start
 
 1. Open **Providers** and paste a key for the provider you want (or point **Ollama**
    at a local model — no key needed).
-2. Press **Fetch models**, or just pick a model from the picker above the composer.
-3. Type something. If no model is available yet, the app sends you to the Providers
-   tab rather than failing silently.
+2. Press **Save & connect** — the app fetches that provider's model list and
+   switches the composer to it in one step.
+3. Type something. If no model is available yet, the picker above the composer
+   offers **Set up a provider**, and the app sends you to the Providers tab
+   rather than failing silently.
 
 ### Bots
 

@@ -37,6 +37,7 @@ jobs:
           node --check src/main/ipc.js
           node --check src/preload.js
           node --check src/renderer/app.js
+          node --check src/renderer/models.js
 
       - name: Run the test suite
         run: npm test

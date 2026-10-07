@@ -29,6 +29,9 @@ let toolQueue = [];            // requests that arrived while one was showing
 /* ================================================================== */
 
 async function boot() {
+  // models.js is a second <script> (the renderer has no bundler and no
+  // require): say so plainly instead of failing later on an undefined global.
+  if (typeof NexusModels === 'undefined') throw new Error('models.js did not load');
   state = await nexus.getState();
   $('#brandName').textContent = state.brand.APP_NAME;
   document.title = state.brand.APP_NAME;
@@ -40,6 +43,7 @@ async function boot() {
   // before any other dialog listener reacts to the same key press.
   bindHelp();
   bindComposer();
+  bindModelPicker();
   bindChatEvents();
   bindSettings();
   bindBots();
@@ -60,7 +64,7 @@ async function boot() {
   loadAgent();
   nexus.appInfo().then(info => { appInfo = info; renderSettings(); }).catch(() => {});
   setInterval(() => { if (document.hidden) return; if ($('#view-bots').classList.contains('active')) loadBots(true); }, 10000);
-  await populateModels();
+  paintModelPicker();
 }
 
 /* ================================================================== */
@@ -135,55 +139,174 @@ async function newChat() {
 }
 
 /* ================================================================== */
-/* Models (grouped dropdown; persisted as 'providerId::model')        */
+/* Models — a searchable, grouped picker above the composer            */
+/*                                                                     */
+/* Which providers are offered, how the list narrows and which         */
+/* "providerId::model" survives a provider disappearing all live in     */
+/* models.js (NexusModels); this half is the DOM.                      */
 /* ================================================================== */
 
-async function populateModels() {
-  const sel = $('#modelSelect');
-  sel.innerHTML = '';
-  const groups = [];
-  {
-    for (const p of state.providers) {
-      const cfg = p.config || {};
-      const usable = cfg.enabled !== false && (cfg.hasKey || p.offline || (p.requiresBaseUrl && cfg.baseUrl));
-      if (!usable) continue;
-      const models = (cfg.models && cfg.models.length) ? cfg.models : (p.defaultModels || []);
-      if (models.length) groups.push({ group: p.id, label: p.name, models });
-    }
-  }
+let modelGroupsCache = [];   // every model the picker offers, rebuilt on paint
+let modelOptions = [];       // the option nodes on screen, in order
+let modelOpen = false;       // the popup is showing
+let modelActive = -1;        // highlighted option within modelOptions
 
-  const wanted = state.settings.activeChatModel;
-  let first = true;
-  for (const g of groups) {
-    const og = document.createElement('optgroup');
-    og.label = g.label;
-    for (const m of g.models) {
-      const opt = document.createElement('option');
-      opt.value = g.group + '::' + m;
-      opt.textContent = m;
-      if (wanted === opt.value || (first && !wanted)) opt.selected = true;
-      og.appendChild(opt);
-      first = false;
-    }
-    sel.appendChild(og);
+/** Paint the trigger, the chat-header status line and (if open) the list. */
+function paintModelPicker() {
+  modelGroupsCache = NexusModels.modelGroups(state.providers);
+  const value = NexusModels.resolveSelection(modelGroupsCache, state.settings.activeChatModel);
+  const sel = NexusModels.splitSelection(value);
+  if (value && value !== state.settings.activeChatModel) {
+    // The saved choice went stale — key cleared, provider removed. Keep the
+    // setting and the screen saying the same thing.
+    state.settings.activeChatModel = value;
+    nexus.updateSettings({ activeChatModel: value });
   }
-  if (!sel.options.length) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'No providers yet — add a key in the Providers tab';
-    opt.disabled = true; opt.selected = true;
-    sel.appendChild(opt);
-  } else if (sel.selectedOptions[0]) {
-    state.settings.activeChatModel = sel.selectedOptions[0].value;
-    nexus.updateSettings({ activeChatModel: state.settings.activeChatModel });
+  const group = modelGroupsCache.find(g => g.id === sel.providerId);
+  $('#modelProvider').textContent = group ? group.label : '';
+  $('#modelName').textContent = sel.model || 'No model';
+  // The header repeats the choice, so it stays visible with the popup closed
+  // and the composer full of text.
+  $('#chatStatus').textContent = sel.model
+    ? (group ? group.label : sel.providerId) + ' · ' + sel.model
+    : 'No model yet — open the picker to set one up';
+  if (modelOpen) renderModelList();
+}
+
+/** Rebuild the popup's option list from the search field. */
+function renderModelList() {
+  const list = $('#modelList');
+  const query = $('#modelSearch').value;
+  const groups = NexusModels.filterGroups(modelGroupsCache, query);
+  list.textContent = '';
+  modelOptions = [];
+  for (const g of groups) {
+    const box = document.createElement('div');
+    box.className = 'model-group';
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', g.label);
+    const head = document.createElement('div');
+    head.className = 'model-group-label';
+    head.setAttribute('aria-hidden', 'true');
+    head.textContent = g.label;
+    box.appendChild(head);
+    for (const m of g.models) {
+      const value = g.id + '::' + m;
+      const opt = document.createElement('div');
+      opt.className = 'model-opt';
+      opt.setAttribute('role', 'option');
+      opt.id = 'modelOpt-' + modelOptions.length;
+      opt.setAttribute('aria-selected', String(value === state.settings.activeChatModel));
+      opt.dataset.value = value;
+      const name = document.createElement('span');
+      name.className = 'model-opt-name';
+      name.textContent = m;
+      opt.appendChild(name);
+      opt.addEventListener('click', () => chooseModel(value));
+      box.appendChild(opt);
+      modelOptions.push(opt);
+    }
+    list.appendChild(box);
+  }
+  const none = modelOptions.length === 0;
+  $('#modelEmpty').classList.toggle('hidden', !none);
+  $('#modelEmptyText').textContent = modelGroupsCache.length
+    ? 'No model matches “' + query + '”.'
+    : 'No models yet — add a key in the Providers tab.';
+  setActiveModelOption(Math.min(modelActive, modelOptions.length - 1));
+}
+
+/** Move the highlight (and aria-activedescendant) to option i. */
+function setActiveModelOption(i) {
+  modelActive = i;
+  modelOptions.forEach((o, n) => o.classList.toggle('on', n === i));
+  const on = modelOptions[i];
+  const list = $('#modelList');
+  if (on) {
+    list.setAttribute('aria-activedescendant', on.id);
+    // Scroll after the class swap: the highlight must be visible at once.
+    if (on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  } else if (list.removeAttribute) {
+    list.removeAttribute('aria-activedescendant');
   }
 }
 
+function openModelPop() {
+  if (modelOpen) return;
+  // Rebuild first: a provider may have been saved, imported or cleared since
+  // the last paint, and the popup must never offer yesterday's list.
+  paintModelPicker();
+  modelOpen = true;
+  $('#modelPop').classList.remove('hidden');
+  $('#modelBtn').setAttribute('aria-expanded', 'true');
+  $('#modelSearch').value = '';
+  modelActive = -1;
+  renderModelList();
+  // Land on the model in use, so Enter keeps what you already had.
+  const at = modelOptions.findIndex(o => o.getAttribute('aria-selected') === 'true');
+  setActiveModelOption(at >= 0 ? at : 0);
+  $('#modelSearch').focus();
+}
+
+function closeModelPop(restoreFocus) {
+  if (!modelOpen) return;
+  modelOpen = false;
+  $('#modelPop').classList.add('hidden');
+  $('#modelBtn').setAttribute('aria-expanded', 'false');
+  if (restoreFocus !== false) $('#modelBtn').focus();
+}
+
+/** Pick a model: paint at once, then persist — the UI never waits on IPC. */
+async function chooseModel(value) {
+  if (!value) return;
+  state.settings.activeChatModel = value;
+  closeModelPop();
+  paintModelPicker();
+  await nexus.updateSettings({ activeChatModel: value });
+}
+
+function bindModelPicker() {
+  const btn = $('#modelBtn');
+  const search = $('#modelSearch');
+  btn.addEventListener('click', () => (modelOpen ? closeModelPop() : openModelPop()));
+  btn.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); openModelPop(); }
+    else if (e.key === 'Escape' && modelOpen) { e.preventDefault(); closeModelPop(); }
+  });
+  // Filtering resets the highlight to the first match: type, then Enter.
+  search.addEventListener('input', () => {
+    modelActive = -1;
+    renderModelList();
+    setActiveModelOption(modelOptions.length ? 0 : -1);
+  });
+  search.addEventListener('keydown', e => {
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); setActiveModelOption(Math.min(modelActive + 1, modelOptions.length - 1)); break;
+      case 'ArrowUp': e.preventDefault(); setActiveModelOption(modelActive <= 0 ? 0 : modelActive - 1); break;
+      case 'Home': e.preventDefault(); setActiveModelOption(0); break;
+      case 'End': e.preventDefault(); setActiveModelOption(modelOptions.length - 1); break;
+      case 'Enter': {
+        e.preventDefault();
+        const opt = modelOptions[modelActive] || modelOptions[0];
+        if (opt) chooseModel(opt.dataset.value);
+        break;
+      }
+      case 'Escape': e.preventDefault(); closeModelPop(); break;
+      case 'Tab': closeModelPop(false); break;
+      default: return;
+    }
+  });
+  $('#modelSetupBtn').addEventListener('click', () => { closeModelPop(false); activateTab('providers'); });
+  // Clicking anywhere else closes it, like every other menu in the app.
+  document.addEventListener('click', e => {
+    if (!modelOpen) return;
+    const root = $('#modelPicker');
+    if (root && root.contains && !root.contains(e.target)) closeModelPop(false);
+  });
+}
+
 function currentSelection() {
-  const v = state.settings.activeChatModel || '';
-  const i = v.indexOf('::');
-  if (i < 0) return { providerId: '', model: '' };
-  return { providerId: v.slice(0, i), model: v.slice(i + 2) };
+  return NexusModels.splitSelection(state.settings.activeChatModel);
 }
 
 /* ================================================================== */
@@ -210,10 +333,6 @@ function bindComposer() {
   $('#stopBtn').addEventListener('click', () => nexus.stop());
   $('#regenBtn').addEventListener('click', regenerate);
   $('#newChatBtn').addEventListener('click', newChat);
-  $('#modelSelect').addEventListener('change', async e => {
-    state.settings.activeChatModel = e.target.value;
-    await nexus.updateSettings({ activeChatModel: e.target.value });
-  });
   $('#refreshModelsBtn').addEventListener('click', async () => {
     const { providerId } = currentSelection();
     if (providerId) {
@@ -222,7 +341,7 @@ function bindComposer() {
       state = await nexus.getState();
       invalidateProviderStatus(providerId);
     }
-    populateModels();
+    paintModelPicker();
   });
 }
 
@@ -233,8 +352,9 @@ function setStreamingUI(on) {
   $('#input').disabled = on;
   // The model can't change mid-stream — a swap would apply to the next message
   // while the running one still streams under the old selection.
-  const sel = $('#modelSelect');
-  if (sel) sel.disabled = on;
+  const btn = $('#modelBtn');
+  if (btn) btn.disabled = on;
+  if (on) closeModelPop(false);
   updateRegenBtn();
 }
 
@@ -316,7 +436,9 @@ async function sendMessage(presetText) {
 
   const { providerId, model } = currentSelection();
   if (!providerId) {
-    toast('Pick a model first — add a key in the Providers tab.', 'warn');
+    // Nothing to talk to yet — send them where they can fix that.
+    toast('No model selected — add a key in the Providers tab.', 'warn');
+    activateTab('providers');
     return;
   }
 
@@ -391,7 +513,7 @@ function bindChatEvents() {
 async function regenerate() {
   if (streaming || !currentConvId) return;
   const { providerId, model } = currentSelection();
-  if (!providerId) { toast('Pick a model first.', 'warn'); return; }
+  if (!providerId) { toast('No model selected — add a key in the Providers tab.', 'warn'); activateTab('providers'); return; }
   setStreamingUI(true);
   streamedText = '';
   let res;
@@ -415,8 +537,7 @@ async function regenerate() {
 /* ================================================================== */
 
 function providerUsable(p) {
-  const cfg = p.config || {};
-  return cfg.enabled !== false && (cfg.hasKey || p.offline || (p.requiresBaseUrl && cfg.baseUrl));
+  return NexusModels.isUsable(p);
 }
 
 function bindProviderSearch() {
@@ -485,7 +606,7 @@ async function renderProviderStatus(p, el, dot) {
 function renderProviders() {
   const wrap = $('#providerCards');
   if (!wrap) return;
-  wrap.innerHTML = '';
+  wrap.textContent = '';
   const grid = document.createElement('div');
   grid.className = 'provider-grid';
   wrap.appendChild(grid);
@@ -498,7 +619,10 @@ function renderProviders() {
   const sum = $('#providerSummary');
   if (sum) sum.textContent = `${usable}/${state.providers.length} providers ready — keys stay on this PC${providerQuery ? ` · filter “${providerQuery}”` : ''}.`;
   if (!list.length) {
-    wrap.innerHTML = '<div class="empty-panel">No providers match your search.</div>';
+    const none = document.createElement('div');
+    none.className = 'empty-panel';
+    none.textContent = 'No providers match your search.';
+    wrap.appendChild(none);
     return;
   }
 
@@ -508,11 +632,18 @@ function renderProviders() {
 
     const head = document.createElement('div');
     head.className = 'pcard-head';
-    head.innerHTML = '<span class="pdot"></span><span class="pcard-name"></span><span class="pcard-kind"></span>';
-    $('.pcard-name', head).textContent = p.name;
-    const kind = $('.pcard-kind', head);
+    const dot = document.createElement('span');
+    dot.className = 'pdot';
+    const name = document.createElement('span');
+    name.className = 'pcard-name';
+    name.textContent = p.name;
+    const kind = document.createElement('span');
+    kind.className = 'pcard-kind';
     kind.textContent = p.offline ? 'LOCAL & FREE' : (p.requiresBaseUrl ? 'SELF-HOSTED' : 'API KEY');
     if (p.offline) kind.className = 'pcard-kind local';
+    head.appendChild(dot);
+    head.appendChild(name);
+    head.appendChild(kind);
     card.appendChild(head);
 
     const notes = document.createElement('p');
@@ -522,7 +653,7 @@ function renderProviders() {
     const status = document.createElement('div');
     status.className = 'statusline';
     card.appendChild(status);
-    renderProviderStatus(p, status, $('.pdot', head));
+    renderProviderStatus(p, status, dot);
 
     if (!p.offline || p.requiresBaseUrl || p.id === 'ollama') {
       if (!p.offline) {
@@ -549,18 +680,55 @@ function renderProviders() {
     if (card._keyInput || card._urlInput) {
       const save = document.createElement('button');
       save.className = 'primary';
-      save.textContent = 'Save';
+      save.textContent = 'Save & connect';
+      // One click has to end in a working model: store the key or URL, read the
+      // provider's own model list, and switch the composer over to it.
       save.addEventListener('click', async () => {
+        if (save.disabled) return;
         const cfg = {};
         if (card._keyInput && card._keyInput.value.trim()) cfg.apiKey = card._keyInput.value.trim();
         if (card._urlInput) cfg.baseUrl = card._urlInput.value.trim();
-        if (!Object.keys(cfg).length) { toast('Nothing to save.', 'warn'); return; }
-        const r = await nexus.saveProvider(p.id, cfg);
-        toast(r.ok ? p.name + ' saved.' : 'Save failed: ' + r.error, r.ok ? 'ok' : 'error');
-        state = await nexus.getState();
-        invalidateProviderStatus(p.id); // fresh check for the new key/URL
-        renderProviders();
-        populateModels();
+        if (card._keyInput && !cfg.apiKey && !p.config.hasKey) {
+          toast('Paste your ' + p.name + ' API key first.', 'warn');
+          card._keyInput.focus();
+          return;
+        }
+        if (card._urlInput && !cfg.baseUrl && p.requiresBaseUrl && !p.config.baseUrl) {
+          toast('Set the base URL first.', 'warn');
+          card._urlInput.focus();
+          return;
+        }
+        save.disabled = true;
+        save.textContent = 'Connecting…';
+        try {
+          if (Object.keys(cfg).length) {
+            const r = await nexus.saveProvider(p.id, cfg);
+            if (!r.ok) { toast('Save failed: ' + r.error, 'error'); return; }
+          }
+          state = await nexus.getState();
+          invalidateProviderStatus(p.id); // fresh check for the new key/URL
+          let fetchError = null;
+          try {
+            const fr = await nexus.fetchModels(p.id);
+            if (!fr.ok) fetchError = fr.error;
+          } catch (e) {
+            fetchError = (e && e.message) || 'no answer';
+          }
+          state = await nexus.getState();
+          const value = NexusModels.firstModelOf(NexusModels.modelGroups(state.providers), p.id);
+          if (value) await chooseModel(value);
+          else paintModelPicker();
+          renderProviders();
+          if (fetchError) {
+            toast('Saved — but ' + p.name + ' did not list any models (' + fetchError + ').', 'warn');
+          } else {
+            const using = value ? 'using ' + NexusModels.splitSelection(value).model + '.' : 'pick a model above.';
+            toast(p.name + ' connected — ' + using, 'ok');
+          }
+        } finally {
+          save.disabled = false;
+          save.textContent = 'Save & connect';
+        }
       });
       foot.appendChild(save);
     }
@@ -573,7 +741,7 @@ function renderProviders() {
       state = await nexus.getState();
       invalidateProviderStatus(p.id);
       renderProviders();
-      populateModels();
+      paintModelPicker();
     });
     foot.appendChild(fetchBtn);
     if (p.config.hasKey) {
@@ -586,7 +754,7 @@ function renderProviders() {
         state = await nexus.getState();
         invalidateProviderStatus(p.id);
         renderProviders();
-        populateModels();
+        paintModelPicker();
       });
       foot.appendChild(clear);
     }
@@ -660,7 +828,7 @@ function bindSettings() {
       await loadSkills();
       invalidateProviderStatus();
       renderSettings();
-      populateModels();
+      paintModelPicker();
       renderMessages();
       const rs = $('#resetStatus');
       if (rs) rs.textContent = 'Defaults restored.';
@@ -687,6 +855,7 @@ function bindSettings() {
       await refreshConversations();
       renderMessages();
       renderProviders();
+      paintModelPicker(); // imported keys may have changed what is on the list
       toast('Import complete.', 'ok');
     } else if (!r.canceled) {
       toast('Import failed: ' + (r.error || 'unknown'), 'error');
@@ -1884,7 +2053,8 @@ const HELP_TOPICS = [
     lead: 'Every conversation runs on a model you pick, with a key you own.',
     bullets: [
       'New chat starts a fresh conversation. The sidebar keeps every chat and removes one with its ✕ button.',
-      'The picker above the composer chooses the provider and model for the next message. Refresh re-reads the list whenever a provider adds new models.',
+      'The picker above the composer opens a searchable list of every model you have set up — type a few letters, move with the arrow keys, press Enter to choose. The header line above the chat always shows who is answering.',
+      'The refresh button next to it re-reads the list whenever a provider adds new models.',
       'Regenerate replays the last answer; Stop cuts a reply short while it is still streaming.',
       'Enter sends, Shift + Enter adds a line, and Ctrl + N starts a new chat from anywhere.'
     ],
@@ -1966,12 +2136,13 @@ const HELP_TOPICS = [
     lead: 'NexusChat Open never sells model access. Paste a provider key in Providers and the app talks to that provider directly.',
     bullets: [
       'Every provider you add is available everywhere — chats and bots alike.',
+      'Save & connect does the whole handover in one click: the key or URL is stored, the provider’s model list is fetched, and the composer switches to that model.',
       'The app calls the provider from this PC — nothing is routed through anyone else.',
       'Keys are encrypted at rest and stay on this machine.',
       'Local providers (Ollama, LM Studio) need no key at all — they answer from this PC and work with Wi-Fi off.',
       'Every provider’s base URL and model list are editable, so endpoints can be fixed without a new build.'
     ],
-    footer: 'Pick a model in the composer, and refresh the list whenever a provider adds new ones.'
+    footer: 'Pick a model in the composer’s searchable picker, and refresh the list whenever a provider adds new ones.'
   },
   {
     id: 'agent',

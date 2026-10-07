@@ -414,13 +414,14 @@ main { flex: 1; min-height: 0; }
   border-bottom: 1px solid var(--line);
 }
 #chatStatus {
-  margin-left: auto;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.03em;
   color: var(--muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 #refreshModelsBtn {
   width: 30px;
@@ -443,20 +444,83 @@ main { flex: 1; min-height: 0; }
   width: 100%;
   padding: 0 0 2px;
 }
-#modelSelect {
-  width: auto;
-  max-width: 280px;
+/* The model picker. The trigger always reads as a dropdown (label, value,
+ * chevron), and the list opens upward — the composer sits at the bottom of
+ * the window, so a downward popup would open off-screen. */
+.model-picker { position: relative; min-width: 0; }
+.model-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
   min-width: 0;
-  border-color: transparent;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
+  color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-2);
-  padding-top: 5px;
-  padding-bottom: 5px;
+  text-align: left;
 }
-#modelSelect:hover, #modelSelect:focus { border-color: var(--line); }
+.model-btn:hover, .model-btn[aria-expanded="true"] { border-color: var(--line); background: var(--hover-bg); }
+.model-btn:disabled { opacity: .5; cursor: default; }
+.model-provider {
+  flex: none;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-chev { flex: none; display: grid; place-items: center; width: 14px; height: 14px; color: var(--muted); }
+.model-chev svg { width: 14px; height: 14px; }
+.model-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 48px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .38);
+}
+#modelSearch { width: 100%; }
+.model-list { max-height: 260px; overflow-y: auto; }
+.model-group + .model-group { margin-top: 6px; }
+.model-group-label {
+  padding: 4px 8px 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.model-opt {
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-opt:hover, .model-opt.on { background: var(--hover-bg); }
+.model-opt-name { overflow: hidden; text-overflow: ellipsis; }
+.model-opt[aria-selected="true"] { color: var(--accent-brand); }
+.model-opt[aria-selected="true"]::after { content: ' ✓'; }
+.model-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 2px 4px 4px; }
+.model-empty p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 
 #messages {
   flex: 1;
@@ -807,6 +871,16 @@ input[type=text], input[type=password], input[type=number], input[type=search], 
   outline: none;
 }
 input:focus, textarea:focus, select:focus { border-color: var(--accent-brand); }
+/* The global appearance reset strips every select's arrow, which left the
+ * dropdowns (theme, interval, provider/model in the bot form) reading as plain
+ * text boxes. Paint the arrow back on so a select always looks like one. */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  padding-right: 32px;
+}
 .row { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
 .muted { color: var(--muted); }
 .statusline { font-family: var(--font-mono); font-size: 12px; margin-top: 6px; min-height: 16px; color: var(--muted); letter-spacing: 0.02em; }

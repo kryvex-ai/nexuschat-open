@@ -39,7 +39,21 @@
         <div id="messages"></div>
         <div id="composer">
           <div class="composer-top">
-            <select id="modelSelect"></select>
+            <div class="model-picker" id="modelPicker">
+              <button type="button" id="modelBtn" class="model-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="modelPop" title="Choose the provider and model for the next message">
+                <span class="model-provider" id="modelProvider"></span>
+                <span class="model-name" id="modelName">No model</span>
+                <span class="model-chev" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+              </button>
+              <div id="modelPop" class="model-pop hidden">
+                <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off" spellcheck="false">
+                <div id="modelList" class="model-list" role="listbox" aria-label="Models"></div>
+                <div id="modelEmpty" class="model-empty hidden">
+                  <p id="modelEmptyText">No models yet.</p>
+                  <button type="button" id="modelSetupBtn" class="primary">Set up a provider</button>
+                </div>
+              </div>
+            </div>
             <button id="refreshModelsBtn" class="ghost" title="Refresh model lists" aria-label="Refresh model lists"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span></button>
           </div>
           <textarea id="input" rows="1" placeholder="Message NexusChat Open…"></textarea>
@@ -328,6 +342,7 @@
     </div>
   </div>
   <div id="botMenu" class="bot-menu hidden"></div>
+  <script src="models.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

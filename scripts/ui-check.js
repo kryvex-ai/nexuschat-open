@@ -156,6 +156,41 @@ async function attach(wsUrl) {
     agentUi.deny && agentUi.allow && agentUi.always && agentUi.modalHiddenAtBoot, JSON.stringify(agentUi));
   check('the composer carries the tools switch', agentUi.toggle === true);
 
+  // The model picker, driven the way a person drives it: open, search, choose.
+  const picker = JSON.parse(await client.evaluate(`(() => {
+    const btn = document.getElementById('modelBtn');
+    const pop = document.getElementById('modelPop');
+    const search = document.getElementById('modelSearch');
+    if (!btn || !pop || !search) return JSON.stringify({ missing: true });
+    btn.click();
+    const opened = !pop.classList.contains('hidden');
+    const expanded = btn.getAttribute('aria-expanded');
+    const all = [...pop.querySelectorAll('[role=option]')].map(o => o.textContent);
+    const groups = [...pop.querySelectorAll('[role=group]')].map(g => g.getAttribute('aria-label'));
+    search.value = 'hermes';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    const filtered = [...pop.querySelectorAll('[role=option]')].map(o => o.textContent);
+    const first = pop.querySelector('[role=option]');
+    if (first) first.click();
+    return JSON.stringify({
+      opened, expanded, all, groups, filtered,
+      closed: pop.classList.contains('hidden'),
+      trigger: document.getElementById('modelBtn').textContent.replace(/\\s+/g, ' ').trim(),
+      status: document.getElementById('chatStatus').textContent.trim()
+    });
+  })()`));
+  check('the model dropdown opens as a listbox', picker.missing !== true && picker.opened && picker.expanded === 'true',
+    picker.all ? picker.all.length + ' models' : JSON.stringify(picker));
+  check('the list is grouped by provider', Array.isArray(picker.groups) && picker.groups.length > 0,
+    picker.groups && picker.groups.join(', '));
+  check('typing narrows the list to the matches',
+    Array.isArray(picker.filtered) && picker.filtered.length > 0 &&
+    picker.filtered.length <= picker.all.length && picker.filtered.every(t => /hermes/i.test(t)),
+    picker.filtered && picker.filtered.join(', '));
+  check('choosing closes it and labels the trigger and header',
+    picker.closed === true && /hermes/i.test(picker.trigger) && /hermes/i.test(picker.status),
+    picker.trigger + ' | ' + picker.status);
+
   // State: local-only shape, full provider list.
   const state = JSON.parse(await client.evaluate(`(async () => JSON.stringify(await nexus.getState()))()`));
   check('the state carries no mode/onlineUrl',
