@@ -52,11 +52,23 @@ test('resolvePath: nothing outside the workspace resolves', () => {
   assert.equal(resolvePath(root, '../../etc/passwd').ok, false);
   assert.equal(resolvePath(root, '/etc/hostname').ok, false);
   assert.equal(resolvePath(root, '').ok, false, 'the root itself is not a target');
-  // a link pointing out of the tree cannot be used as a tunnel
-  fs.symlinkSync('/etc', path.join(root, 'out'));
-  const viaLink = resolvePath(root, 'out/hostname');
+  // A link pointing out of the tree cannot be used as a tunnel. A junction
+  // needs no privileges on Windows and its target must exist there at all —
+  // /etc does not — while off Windows the type argument is ignored.
+  fs.symlinkSync(process.platform === 'win32' ? 'C:\\Windows' : '/etc', path.join(root, 'out'), 'junction');
+  const viaLink = resolvePath(root, 'out');
   assert.equal(viaLink.ok, false);
   assert.match(viaLink.error, /outside the workspace/);
+});
+
+test('a link whose target is gone cannot be written through', () => {
+  const root = workspace();
+  const gone = tmpDir('dangle-target-');
+  fs.symlinkSync(gone, path.join(root, 'dangle'), 'junction');
+  fs.rmSync(gone, { recursive: true, force: true });
+  const dangling = resolvePath(root, 'dangle');
+  assert.equal(dangling.ok, false, 'the vanished target must not become a way out');
+  assert.match(dangling.error, /could not be resolved|outside/);
 });
 
 test('resolvePath: writes into .git internals are refused, reads are fine', () => {
@@ -202,6 +214,10 @@ test('git tools work on a real repository', async () => {
   const author = { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 't@e', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 't@e' };
   const run = (cmd) => shellTools.runProcess(['git', ...cmd], { cwd: root, env: author });
   await run(['init', '-q', '-b', 'main']);
+  // A repo-local identity: CI runners (and fresh machines) have no global
+  // git config, and the git_commit handler does not inherit the env above.
+  await run(['config', 'user.name', 'Test']);
+  await run(['config', 'user.email', 't@e']);
   assert.match(await shell('git_status', {}, root), /main|no commits/i);
   await run(['add', '.']);
   assert.match(await shell('git_commit', { message: 'first' }, root), /Committed [0-9a-f]+/);

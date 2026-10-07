@@ -20,7 +20,7 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
-const { resolvePath } = require('./paths');
+const { resolvePath, realRoot } = require('./paths');
 const { LIMITS } = require('../../shared/tools');
 
 /** Git options that can run something on this machine. Refused, not sanitised. */
@@ -124,11 +124,16 @@ function assertSafeGitArgs(args) {
 
 /** The repository the call is about, refused when it is not a git repo. */
 async function repoDir(root, maybe) {
-  const base = maybe ? resolvePath(root, maybe) : { ok: true, abs: root, rel: '' };
+  // Walk up from the symlink-free root: temp folders live behind links on
+  // some systems (macOS: /var → /private/var), and a raw path here would
+  // never string-match the realpathed paths resolvePath hands out — the
+  // pathspec containment check compares the two.
+  const real = realRoot(root) || root;
+  const base = maybe ? resolvePath(root, maybe) : { ok: true, abs: real, rel: '' };
   if (!base.ok) fail(base.error);
   let out = '';
   for (let dir = base.abs; ;) {
-    if (fs.existsSync(path.join(dir, '.git'))) return { dir, rel: path.relative(root, dir) || '.' };
+    if (fs.existsSync(path.join(dir, '.git'))) return { dir, rel: path.relative(real, dir) || '.' };
     const up = path.dirname(dir);
     if (up === dir) break;
     dir = up;
@@ -149,7 +154,11 @@ async function repoDir(root, maybe) {
 function repoPathspec(root, p, repo) {
   const r = resolvePath(root, p);
   if (!r.ok) fail(r.error);
-  const rel = path.relative(repo.dir, r.abs);
+  // r.abs is symlink-free; pin the repository side to its real form too, or
+  // the containment check below can reject a path that is inside both.
+  let repoReal;
+  try { repoReal = fs.realpathSync(repo.dir); } catch { fail('That repository folder is not available.'); }
+  const rel = path.relative(repoReal, r.abs);
   if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
     fail(`${r.rel} is not inside this git repository, so git cannot be pointed at it.`);
   }

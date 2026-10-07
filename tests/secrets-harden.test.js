@@ -84,7 +84,7 @@ test('no license state is stored at all', () => {
 });
 
 /* (d) written files are owner-only. */
-test('written files are 0600 (owner-only)', () => {
+test('written files are 0600 (owner-only)', { skip: process.platform === 'win32' ? 'NTFS has no POSIX modes — the chmod in store.js is best-effort there' : false }, () => {
   const dir = tmpDir('nexus-secrets-perm-');
   const store = new Store(dir, PLAIN);
   store.updateSettings({ theme: 'light' });

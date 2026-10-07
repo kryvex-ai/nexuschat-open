@@ -37,6 +37,11 @@ function realRoot(root) {
  * Resolve a model-supplied path against the root.
  * Returns { ok: true, abs, rel } or { ok: false, error } — never throws.
  */
+/** True for an existing entry, dangling link included. */
+function lstatOk(p) {
+  try { fs.lstatSync(p); return true; } catch { return false; }
+}
+
 function resolvePath(root, p, { forWrite = false } = {}) {
   const real = realRoot(root);
   if (!real) return { ok: false, error: 'The workspace folder is not available — set it in Settings → Agent.' };
@@ -52,9 +57,12 @@ function resolvePath(root, p, { forWrite = false } = {}) {
   }
 
   // Follow symlinks on whatever part already exists, so a link pointing out
-  // of the tree cannot be used as a tunnel.
+  // of the tree cannot be used as a tunnel. This probes with lstat, not
+  // exists: a link whose target has vanished still counts as a link here, so
+  // the realpath below refuses it instead of the write going straight
+  // through to wherever the dangling link points.
   let probe = abs;
-  while (probe !== real && !fs.existsSync(probe)) {
+  while (probe !== real && !lstatOk(probe)) {
     const up = path.dirname(probe);
     if (up === probe) break;
     probe = up;
@@ -77,14 +85,18 @@ function resolvePath(root, p, { forWrite = false } = {}) {
     return { ok: false, error: 'That path is outside the workspace.' };
   }
 
+  // Workspace-relative paths are reported with forward slashes: the messages
+  // quote them, models read them back, and the string checks in the tool
+  // layer ("dir/") must behave the same on every platform.
+  const relPosix = relFinal.split(path.sep).join('/');
   if (forWrite) {
-    const top = relFinal.split(path.sep)[0];
+    const top = relPosix.split('/')[0];
     if (DENY_WRITE_DIRS.includes(top)) {
       return { ok: false, error: `Writing inside ${top}/ is not something a text tool should do — use the git tools instead.` };
     }
   }
 
-  return { ok: true, abs: absFinal, rel: relFinal, root: real };
+  return { ok: true, abs: absFinal, rel: relPosix, root: real };
 }
 
 function assertInside(root, abs) {
@@ -94,7 +106,7 @@ function assertInside(root, abs) {
   if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new WorkspaceError('That path is outside the workspace.');
   }
-  return rel;
+  return rel.split(path.sep).join('/');
 }
 
 module.exports = { resolvePath, realRoot, assertInside, WorkspaceError, DENY_WRITE_DIRS };

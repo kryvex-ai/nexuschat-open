@@ -29,22 +29,21 @@ jobs:
         run: npm test
 
       - name: Build NSIS installer + portable exe
+        # Optional: set the repo secrets WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
+        # with a code-signing cert and map them to CSC_LINK / CSC_KEY_PASSWORD
+        # below to remove the SmartScreen "unknown publisher" warning.
         run: npx electron-builder --win nsis portable --x64
-        env:
-          # Optional: set these repo secrets with a code-signing cert to remove
-          # the SmartScreen "unknown publisher" warning.
-          # CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
       # The app verifies this file before running a downloaded installer, so
       # it has to travel with the release — no checksum, no install.
       - name: Write SHA256SUMS.txt
         run: |
           Set-Location dist
-          $lines = Get-ChildItem *.exe | ForEach-Object {
+          $lines = @(Get-ChildItem *.exe | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
-          }
+          })
+          if (-not $lines) { throw 'No exe files in dist to checksum.' }
           [System.IO.File]::WriteAllLines("$PWD/SHA256SUMS.txt", $lines)
           Get-Content SHA256SUMS.txt
 
