@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { validSkillIds, pluginById } = require('../shared/skills');
+const { sanitizeHosts } = require('../shared/ssh');
 
 /** Keep only ids of packs that actually ship with the app (deduped, ordered). */
 function validPluginIds(list) {
@@ -47,6 +48,7 @@ function defaultSettings() {
     enabledPlugins: [],         // skill packs with every skill switched on
     enabledSkills: [],          // individually switched-on skills (beyond packs)
     providerConfigs: {},        // id -> { enabled, apiKey(encrypted), baseUrl, models[] }
+    sshHosts: [],               // saved SSH hosts, sanitized on every write (shared/ssh.js)
     agent: defaultAgentSettings()
   };
 }
@@ -155,7 +157,7 @@ class Store {
   getSettings() { return { ...this.settings, providerConfigs: undefined }; }
 
   updateSettings(patch = {}) {
-    const allowed = ['theme', 'temperature', 'maxTokens', 'systemPrompt', 'activeChatModel', 'runInBackground', 'introDone', 'enabledPlugins', 'enabledSkills', 'agent', 'dismissedUpdate'];
+    const allowed = ['theme', 'temperature', 'maxTokens', 'systemPrompt', 'activeChatModel', 'runInBackground', 'introDone', 'enabledPlugins', 'enabledSkills', 'agent', 'dismissedUpdate', 'sshHosts'];
     const clean = {};
     for (const k of allowed) {
       if (!(k in patch)) continue;
@@ -190,6 +192,11 @@ class Store {
           break;
         case 'introDone':
           if (v === true || v === false) clean[k] = v;
+          break;
+        case 'sshHosts':
+          // Only a real list may replace the saved list — a stray patch of the
+          // wrong shape is ignored rather than wiping the user's hosts.
+          if (Array.isArray(v)) clean[k] = sanitizeHosts(v);
           break;
         case 'dismissedUpdate':
           // Only a version the app could actually have shown, or null to clear:

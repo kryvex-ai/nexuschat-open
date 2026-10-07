@@ -17,18 +17,19 @@ test('default settings are local-only and free', () => {
   const s = defaultSettings();
   assert.equal('mode' in s, false, 'no online/offline mode');
   assert.equal('onlineUrl' in s, false, 'no server URL');
-  assert.equal('sshHosts' in s, false, 'no SSH hosts');
+  assert.ok(Array.isArray(s.sshHosts), 'SSH hosts default to an empty list');
+  assert.deepEqual(s.sshHosts, []);
   assert.equal(s.maxTokens, null);
   assert.equal(s.temperature, 0.7);
   assert.equal(s.theme, 'dark');
 });
 
-test('a fresh install carries no online, license or SSH state', () => {
+test('a fresh install carries no online or license state', () => {
   const st = tmpStore();
   const s = st.getSettings();
   assert.equal(s.mode, undefined);
   assert.equal(s.onlineUrl, undefined);
-  assert.equal(s.sshHosts, undefined);
+  assert.deepEqual(s.sshHosts, [], 'SSH hosts exist but start empty');
   assert.equal(s.providerConfigs, undefined, 'raw configs stay private to the store');
   assert.deepEqual(s.enabledPlugins, []);
   assert.deepEqual(s.enabledSkills, []);
@@ -45,6 +46,20 @@ test('settings round-trip and whitelist', () => {
   // persisted
   const store2 = new Store(store.dir, PLAIN);
   assert.equal(store2.getSettings().theme, 'light');
+});
+
+test('sshHosts round-trip through the whitelist, junk never wipes them', () => {
+  const store = tmpStore();
+  store.updateSettings({ sshHosts: [{ id: 'a1', label: 'Web', host: 'web.example', user: 'me', port: 2222, keyFile: '' }] });
+  assert.equal(store.getSettings().sshHosts.length, 1);
+  store.updateSettings({ sshHosts: 'nope' });
+  assert.equal(store.getSettings().sshHosts.length, 1, 'a non-list patch is ignored, not applied');
+  store.updateSettings({ sshHosts: [{ host: '-oProxyCommand=x' }, { id: 'b', host: 'good.example' }] });
+  assert.equal(store.getSettings().sshHosts.length, 1, 'junk entries are dropped by the sanitizer');
+  const raw = JSON.parse(fs.readFileSync(path.join(store.dir, 'settings.json'), 'utf8'));
+  assert.equal(raw.sshHosts[0].host, 'good.example');
+  const store2 = new Store(store.dir, PLAIN);
+  assert.equal(store2.getSettings().sshHosts[0].id, 'b', 'persisted and reloaded');
 });
 
 test('provider config: apiKey encrypted at rest, summaries hide it', () => {

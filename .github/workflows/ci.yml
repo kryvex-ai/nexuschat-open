@@ -39,6 +39,7 @@ jobs:
           node --check src/renderer/app.js
           node --check src/renderer/models.js
           node --check src/shared/updates.js
+          node --check src/shared/ssh.js
           node --check src/main/updates.js
 
       - name: Run the test suite
