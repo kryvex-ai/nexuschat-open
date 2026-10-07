@@ -92,8 +92,19 @@ test('validateArgs: oversized and hostile arguments are refused', () => {
   }
   assert.match(text, /\[\[tool \{"name"/, 'shows the exact directive shape');
   assert.match(text, /asks the user first/i, 'says that permission exists');
+  assert.match(text, /never answer with commands or steps for the user to run instead/,
+    'tells the model to act, not to hand the user instructions');
+  assert.match(text, /the command itself can go anywhere/, 'says how to reach outside the root');
   assert.ok(text.length < 20000, 'the manual stays a sane size, got ' + text.length);
   assert.match(agentSystemPrompt('be brief'), /be brief/, 'the user prompt comes first');
+
+  // A chat without tools must be told it has none, or it writes tutorials.
+  const note = T.toolsOffNote();
+  assert.match(note, /cannot read files/, 'the note says the model cannot act');
+  assert.match(note, /Tools switch/, 'the note points at the switch above the composer');
+  assert.ok(note.length < 600, 'the note stays short, got ' + note.length);
+  assert.ok(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src/main/ipc.js'), 'utf8')
+    .includes('toolsOffNote('), 'ipc.js composes the note into the prompt');
 });
 
 test('callSummary: every tool has a human line', () => {

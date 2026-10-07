@@ -290,7 +290,7 @@ const TOOLS = [
     name: 'run_command',
     risk: RISK.DANGER,
     group: 'shell',
-    summary: 'Run a shell command in the workspace (build, test, git, npm, …).',
+    summary: 'Run a shell command — build, test, git, npm, or a search anywhere on this PC. The working directory stays in the project root, the command itself does not, and it always asks first.',
     args: {
       command: 'string — the command line, run through the system shell',
       cwd: 'string? — working directory (default: root)',
@@ -514,15 +514,26 @@ function manual() {
     '- Results come back as tool messages: read them before your next step, and adapt when one failed.',
     '- Prefer edit_file over write_file — an exact snippet beats rewriting a whole file.',
     '- Look before you leap: read a file before editing it, and run the project tests or build when they exist.',
+    '- Do it yourself: when the user asks you to find, read, run, check, build or search for something, call a tool and report the result — never answer with commands or steps for the user to run instead.',
     '- Anything that writes, deletes, runs a command or uses the network asks the user first. Say what you are about to do, and explain what changed when the results arrive.',
     '- Paths are relative to the project root. Never guess a path you have not listed or read.',
+    '- The file and search tools stay inside the project root. For anything outside it — another folder or the whole machine — use run_command: only its working directory is pinned to the root, the command itself can go anywhere, and the user approves it first.',
     '',
     ...groups
   ].join('\n');
 }
 
+/**
+ * Appended to the system prompt of a chat that has NO tools. Without it the
+ * model doesn't know it is tool-less: it answers "here is how you find a
+ * file" tutorials instead of saying it cannot act.
+ */
+function toolsOffNote() {
+  return 'Tools are off in this chat: you cannot read files, search or run anything on this machine. When the user asks you to do just that, say so plainly and tell them to turn on the Tools switch above the composer and pick a workspace folder in Settings → Assistant.';
+}
+
 module.exports = {
   RISK, RISK_ORDER, LIMITS, TOOLS,
   toolByName, toolNames, toolsByRisk,
-  parseArgType, signature, callSummary, validateArgs, manual
+  parseArgType, signature, callSummary, validateArgs, manual, toolsOffNote
 };

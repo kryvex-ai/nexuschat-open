@@ -2286,6 +2286,7 @@ const HELP_TOPICS = [
       'Deletes, shell commands and network calls always ask too — and are never remembered, whatever you answer.',
       '“Allow for this session” is only offered for file writes, and only for the folder it names. “Forget remembered approvals” clears the lot.',
       'The Tools switch above the composer decides whether a chat may use them at all.',
+      'Ask it to find, run or check something and it does the work itself, then shows the result in the chat — file tools stay in the workspace, and anything beyond it goes through a shell command you approve first.',
       'Tool output is text: nothing a file contains is ever executed.'
     ],
     footer: 'Tools stay off until you turn them on, and nothing is ever accepted automatically.'

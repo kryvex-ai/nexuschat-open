@@ -15,6 +15,7 @@ const sanitizeError = (e) => {
 const { BotStore, BotRunner, validateBotInput, buildBotChatMessages, parseBotDirectives, applyBotDirectives, publicBot } = require('./bots');
 const { ToolHost, PermissionGate, DECISION, catalog } = require('./tools');
 const { runAgentTurn } = require('./agent');
+const { toolsOffNote } = require('../shared/tools');
 const { realRoot } = require('./tools/paths');
 const updateService = require('./updates');
 const fs = require('node:fs');
@@ -281,7 +282,13 @@ function initIpc(store) {
     const userMessage = regenerate ? null : store.appendMessage(conv.id, { role: 'user', content: String(text) });
     conv = store.getConversation(conv.id);
     const history = conv.messages.map(m => ({ role: m.role, content: m.content }));
-    const system = chatSystemPrompt(settings);
+    // The tool state is decided first, because a chat without tools has to be
+    // told it has none — otherwise the model explains commands for the user
+    // to run instead of saying it cannot act.
+    const toolsOn = toolsWantedFor(payload, conv);
+    if (typeof payload.tools === 'boolean') store.updateConversation(conv.id, { tools: payload.tools });
+    const base = chatSystemPrompt(settings);
+    const system = toolsOn ? base : [base, toolsOffNote()].filter(Boolean).join('\n\n');
     const msgs = system ? [{ role: 'system', content: system }, ...history] : history;
 
     const abort = new AbortController();
@@ -294,9 +301,6 @@ function initIpc(store) {
     if (active) { try { active.abort.abort(); } catch { /* already gone */ } }
     active = { conversationId: conv.id, abort, gen };
     emit('chat:begin', { conversationId: conv.id });
-
-    const toolsOn = toolsWantedFor(payload, conv);
-    if (typeof payload.tools === 'boolean') store.updateConversation(conv.id, { tools: payload.tools });
 
     (async () => {
       // Agent turn: the model may ask for tools, get permission, and go round
