@@ -32,7 +32,9 @@ jobs:
         # Optional: set the repo secrets WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
         # with a code-signing cert and map them to CSC_LINK / CSC_KEY_PASSWORD
         # below to remove the SmartScreen "unknown publisher" warning.
-        run: npx electron-builder --win nsis portable --x64
+        # --publish never: releases are attached below via softprops/action-gh-release,
+        # so electron-builder must not try to publish on its own (it has no token).
+        run: npx electron-builder --win nsis portable --x64 --publish never
 
       # The app verifies this file before running a downloaded installer, so
       # it has to travel with the release — no checksum, no install.
