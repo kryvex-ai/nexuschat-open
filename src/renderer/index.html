@@ -9,26 +9,31 @@
 <body>
   <header id="tabbar">
     <div class="brand">
-      <span class="logo"></span>
-      <span id="brandName">NexusChat Open</span>
+      <span class="logo" aria-hidden="true"></span>
+      <span id="brandName" class="sr-only">NexusChat Open</span>
     </div>
-    <nav id="tabs">
-      <button class="tab active" data-tab="chat"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>Chat</button>
-      <button class="tab" data-tab="bots"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><path d="M8 4h8"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg></span>Bots</button>
-      <button class="tab" data-tab="skills"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.2 5.3 5.8.5-4.4 3.8 1.3 5.7L12 15.4l-4.9 2.9 1.3-5.7L4 8.8l5.8-.5z"/></svg></span>Skills</button>
-      <button class="tab" data-tab="providers"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg></span>Providers</button>
-            <button class="tab" data-tab="settings"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Settings</button>
+    <nav id="tabs" aria-label="Sections">
+      <button class="tab active" data-tab="chat" title="Chat" aria-label="Chat"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="tab-label">Chat</span></button>
+      <button class="tab" data-tab="bots" title="Bots" aria-label="Bots"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><path d="M8 4h8"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg></span><span class="tab-label">Bots</span></button>
+      <button class="tab" data-tab="skills" title="Skills" aria-label="Skills"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.2 5.3 5.8.5-4.4 3.8 1.3 5.7L12 15.4l-4.9 2.9 1.3-5.7L4 8.8l5.8-.5z"/></svg></span><span class="tab-label">Skills</span></button>
+      <button class="tab" data-tab="providers" title="Providers" aria-label="Providers"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg></span><span class="tab-label">Providers</span></button>
+      <button class="tab" data-tab="settings" title="Settings" aria-label="Settings"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="tab-label">Settings</span></button>
     </nav>
-    <button id="helpBtn" class="help-chip" type="button" data-help="welcome" title="Guide &amp; help (F1)" aria-label="Open the guide and help window">
-      <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><path d="M12 17h.01"/></svg></span>Help
-    </button>
+    <div class="rail-foot">
+      <button id="helpBtn" class="help-chip" type="button" data-help="welcome" title="Guide &amp; help (F1)" aria-label="Open the guide and help window">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><path d="M12 17h.01"/></svg></span><span class="tab-label">Help</span>
+      </button>
+    </div>
   </header>
 
   <main>
     <!-- CHAT -->
     <section id="view-chat" class="view active">
       <aside id="sidebar">
-        <button id="newChatBtn" class="primary block"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New chat</button>
+        <div class="sidebar-head">
+          <button id="newChatBtn" class="primary block"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New chat</button>
+          <input id="convSearch" class="list-search" type="search" placeholder="Search chats" aria-label="Search chats">
+        </div>
         <div id="convList"></div>
         <div class="sidebar-foot update-foot">
           <button type="button" id="updatePill" class="update-pill" title="Check for updates">
@@ -39,10 +44,12 @@
       </aside>
       <section id="chatPane">
         <div id="chatHeader">
-          <span id="chatStatus" class="muted"></span>
+          <span id="chatTitle" class="chat-title"></span>
+          <span class="status-chip"><span id="chatStatus" class="muted"></span></span>
           <button type="button" class="help-btn" data-help="chat" title="Chat and models" aria-label="Chat and models">?</button>
         </div>
-        <div id="messages"></div>
+        <div id="messages" tabindex="0" aria-busy="false"></div>
+        <div id="chatAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
         <div id="composer">
           <div class="composer-top">
             <div class="model-picker" id="modelPicker">
@@ -52,7 +59,7 @@
                 <span class="model-chev" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
               </button>
               <div id="modelPop" class="model-pop hidden">
-                <input id="modelSearch" type="search" placeholder="Search models…" aria-label="Search models" autocomplete="off" spellcheck="false">
+                <input id="modelSearch" type="search" role="combobox" aria-controls="modelList" aria-autocomplete="list" aria-expanded="false" placeholder="Search models…" aria-label="Search models" autocomplete="off" spellcheck="false">
                 <div id="modelList" class="model-list" role="listbox" aria-label="Models"></div>
                 <div id="modelEmpty" class="model-empty hidden">
                   <p id="modelEmptyText">No models yet.</p>
@@ -60,15 +67,15 @@
                 </div>
               </div>
             </div>
-            <button id="refreshModelsBtn" class="ghost" title="Refresh model lists" aria-label="Refresh model lists"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span></button>
+            <button id="refreshModelsBtn" class="ghost" title="Refresh model lists" aria-label="Refresh model lists"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span></button>
           </div>
-          <textarea id="input" rows="1" placeholder="Message NexusChat Open…"></textarea>
+          <textarea id="input" rows="1" placeholder="Message NexusChat Open…" aria-label="Message"></textarea>
           <div class="composer-foot">
             <div class="composer-hint"><span>Enter to send</span><span>Shift+Enter for newline</span></div>
             <div class="composer-actions">
               <button id="toolsToggleBtn" class="ghost hidden" title="Let the assistant use tools on the workspace">Tools off</button>
-              <button id="regenBtn" class="ghost hidden" title="Regenerate last response"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v6h6"/></svg></span>Regenerate</button>
-              <button id="stopBtn" class="danger hidden"><span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span>Stop</button>
+              <button id="regenBtn" class="ghost hidden" title="Regenerate last response"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36"/><path d="M3 3v6h6"/></svg></span>Regenerate</button>
+              <button id="stopBtn" class="danger hidden"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span>Stop</button>
               <button id="sendBtn" class="primary">Send</button>
             </div>
           </div>
@@ -80,8 +87,8 @@
     <section id="view-bots" class="view">
       <aside id="botSidebar">
         <div id="botSidebarHead">
-          <span class="sidebar-label">BOTS <span id="botCountLabel" class="muted"></span></span>
-          <button id="newBotBtn" class="icon-btn" title="New bot" aria-label="New bot"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
+          <span class="sidebar-label">Bots <span id="botCountLabel" class="muted"></span></span>
+          <button id="newBotBtn" class="icon-btn" title="New bot" aria-label="New bot"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span></button>
         </div>
         <div class="bot-toolbar">
           <input id="botSearch" class="bot-search" type="search" placeholder="Search workers…" aria-label="Search bots">
@@ -94,7 +101,7 @@
         <div id="botTaskLine" class="hidden"></div>
         <div id="botMessages"></div>
         <div id="botComposer" class="hidden">
-          <textarea id="botInput" rows="1" placeholder="Tell your bot what to do — “run every 30 min”, “pause until Monday”, “do it now”… (Enter to send)"></textarea>
+          <textarea id="botInput" rows="1" placeholder="Tell your bot what to do — “run every 30 min”, “pause until Monday”, “do it now”… (Enter to send)" aria-label="Message for this bot"></textarea>
           <div class="composer-actions">
             <button id="botSendBtn" class="primary">Send</button>
           </div>
@@ -158,121 +165,125 @@
             <button type="button" class="help-btn" data-help="settings" title="What each section does" aria-label="What each settings section does">?</button>
           </div>
         </div>
-        <nav class="settings-nav" aria-label="Settings sections">
-          <a href="#sec-generation">Generation</a>
-          <a href="#sec-appearance">Appearance</a>
-          <a href="#sec-background">Background</a>
-          <a href="#sec-agent">Assistant</a>
-          <a href="#sec-ssh">SSH</a>
-          <a href="#sec-data">Data</a>
-        </nav>
-        <div class="card panel" id="sec-generation">
-          <div class="panel-head"><h2>Generation</h2><span class="panel-head-side"><span class="muted small">Model behaviour</span><button type="button" class="help-btn" data-help="generation" title="System prompt, temperature and tokens" aria-label="System prompt, temperature and tokens">?</button></span></div>
-          <label>Default system prompt</label>
-          <textarea id="systemPrompt" rows="3" placeholder="You are a helpful assistant."></textarea>
-          <label>Temperature: <span id="tempVal">0.7</span></label>
-          <input id="tempSlider" type="range" min="0" max="2" step="0.1">
-          <label>Max tokens (blank = provider default)</label>
-          <input id="maxTokens" type="number" min="1" placeholder="auto">
-        </div>
-        <div class="card panel" id="sec-appearance">
-          <div class="panel-head"><h2>Appearance</h2><span class="muted small">Theme</span></div>
-          <label>Theme</label>
-          <select id="themeSelect">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </div>
-        <div class="card panel" id="sec-background">
-          <div class="panel-head"><h2>Background</h2><span class="panel-head-side"><span id="bgPill" class="badge">Off</span><button type="button" class="help-btn" data-help="background" title="Running in the background" aria-label="Running in the background">?</button></span></div>
-          <div class="row">
-            <button id="bgOnBtn" class="ghost">Run in background</button>
-            <button id="bgOffBtn" class="ghost">Quit on close</button>
-            <span id="bgStatus" class="muted"></span>
+        <div class="settings-layout">
+          <nav class="settings-nav" aria-label="Settings sections">
+            <a href="#sec-generation">Generation</a>
+            <a href="#sec-appearance">Appearance</a>
+            <a href="#sec-background">Background</a>
+            <a href="#sec-agent">Assistant</a>
+            <a href="#sec-ssh">SSH</a>
+            <a href="#sec-data">Data</a>
+          </nav>
+          <div class="settings-panels">
+            <div class="card panel" id="sec-generation">
+              <div class="panel-head"><h2>Generation</h2><span class="panel-head-side"><span class="muted small">Model behaviour</span><button type="button" class="help-btn" data-help="generation" title="System prompt, temperature and tokens" aria-label="System prompt, temperature and tokens">?</button></span></div>
+              <label for="systemPrompt">Default system prompt</label>
+              <textarea id="systemPrompt" rows="3" placeholder="You are a helpful assistant."></textarea>
+              <label for="tempSlider">Temperature: <span id="tempVal">0.7</span></label>
+              <input id="tempSlider" type="range" min="0" max="2" step="0.1">
+              <label for="maxTokens">Max tokens (blank = provider default)</label>
+              <input id="maxTokens" type="number" min="1" placeholder="auto">
+            </div>
+            <div class="card panel" id="sec-appearance">
+              <div class="panel-head"><h2>Appearance</h2><span class="muted small">Theme</span></div>
+              <label for="themeSelect">Theme</label>
+              <select id="themeSelect">
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+            <div class="card panel" id="sec-background">
+              <div class="panel-head"><h2>Background</h2><span class="panel-head-side"><span id="bgPill" class="badge">Off</span><button type="button" class="help-btn" data-help="background" title="Running in the background" aria-label="Running in the background">?</button></span></div>
+              <div class="row">
+                <button id="bgOnBtn" class="ghost">Run in background</button>
+                <button id="bgOffBtn" class="ghost">Quit on close</button>
+                <span id="bgStatus" class="muted"></span>
+              </div>
+            </div>
+            <div class="card panel" id="sec-agent">
+              <div class="panel-head"><h2>Assistant &amp; tools</h2><span class="panel-head-side"><span id="agentPill" class="badge">Off</span><button type="button" class="help-btn" data-help="agent" title="Letting the assistant use tools" aria-label="Letting the assistant use tools">?</button></span></div>
+              <p class="muted">Let the assistant read, search and change files in one folder on this PC, run your commands and — if you switch it on — fetch a URL. It can only ever work inside that folder.</p>
+              <div class="row">
+                <button id="agentToggleBtn" class="ghost">Turn tools on</button>
+                <button id="agentWorkspaceBtn" class="ghost">Choose workspace…</button>
+              </div>
+              <p class="muted" id="agentWorkspaceLine">No workspace chosen yet.</p>
+              <div class="row">
+                <button id="agentReadsBtn" class="ghost">Ask before reads: off</button>
+                <button id="agentGrantsBtn" class="ghost">Remember write approvals: on</button>
+                <button id="agentNetBtn" class="ghost">Network tools: off</button>
+              </div>
+              <div class="row">
+                <label for="agentSteps" class="inline">Max tool steps per message</label>
+                <input id="agentSteps" type="number" min="1" max="25" class="w-sm">
+                <button id="agentClearBtn" class="ghost">Forget remembered approvals</button>
+              </div>
+              <p class="muted small" id="agentPolicyLine">Writing, deleting, running a command and fetching a URL always ask you first. Nothing is accepted automatically, and destructive actions are never remembered.</p>
+              <div id="agentToolList" class="tool-catalog"></div>
+            </div>
+            <div class="card panel" id="sec-ssh">
+              <div class="panel-head"><h2>SSH</h2><span class="panel-head-side"><span id="sshCount" class="badge">0 hosts</span><button type="button" class="help-btn" data-help="ssh" title="Remote shells through your own ssh" aria-label="Remote shells through your own ssh">?</button></span></div>
+              <p class="muted">Run commands and read files on machines you already reach with <code>ssh</code>. Passwords are never stored — use a key or your agent, as you would in a terminal.</p>
+              <div id="sshHostList" class="ssh-host-list"></div>
+              <label for="sshLabel">Saved host</label>
+              <div class="row">
+                <input id="sshLabel" type="text" placeholder="Label (e.g. Home server)" class="grow" aria-label="Saved host">
+                <input id="sshHost" type="text" placeholder="host or IP" class="grow" aria-label="Host or IP address">
+              </div>
+              <div class="row">
+                <input id="sshUser" type="text" placeholder="user (optional)" class="grow" aria-label="User">
+                <input id="sshPort" type="number" min="1" max="65535" placeholder="port" class="w-sm" aria-label="Port">
+                <input id="sshKey" type="text" placeholder="key file (optional)" class="w-md" aria-label="Key file path">
+              </div>
+              <div class="row">
+                <button id="sshSaveHostBtn" class="ghost">Save host</button>
+                <button id="sshRemoveHostBtn" class="ghost">Remove</button>
+                <button id="sshTestBtn" class="ghost">Run self-test</button>
+                <button id="sshForgetKeyBtn" class="ghost">Forget host key</button>
+              </div>
+              <label for="sshCmd">Command</label>
+              <div class="row">
+                <input id="sshCmd" type="text" placeholder="uptime" class="grow" aria-label="Command to run">
+                <button id="sshRunBtn" class="ghost">Run</button>
+              </div>
+              <pre id="sshOut" class="code-out" aria-live="polite"></pre>
+              <label for="sshPath">Browse files</label>
+              <div class="row">
+                <input id="sshPath" type="text" placeholder="(login home)" class="grow" aria-label="Browse files">
+                <button id="sshUpBtn" class="ghost">Up</button>
+                <button id="sshListBtn" class="ghost">List</button>
+              </div>
+              <div id="sshFiles" class="ssh-files hidden"></div>
+              <div class="row">
+                <button id="sshPreviewBtn" class="ghost">Preview</button>
+                <button id="sshDownloadBtn" class="ghost">Save to workspace</button>
+                <span id="sshFileStatus" class="muted small"></span>
+              </div>
+              <pre id="sshPreview" class="code-out"></pre>
+              <div class="row">
+                <span class="muted small">Self-test</span>
+                <span id="sshScore" class="badge">not run</span>
+                <button id="sshCopyCfgBtn" class="ghost">Copy Host block</button>
+              </div>
+              <div id="sshFindings" class="ssh-findings"></div>
+              <p class="muted small" id="sshNote"></p>
+              <pre id="sshConfig" class="code-out"></pre>
+            </div>
+            <div class="card panel" id="sec-data">
+              <div class="panel-head"><h2>Data</h2><span class="panel-head-side"><span class="muted small">Portable</span><button type="button" class="help-btn" data-help="data" title="Your data, backups and reset" aria-label="Your data, backups and reset">?</button></span></div>
+              <div class="row">
+                <button id="openDataBtn" class="ghost">Open data folder</button>
+                <button id="exportBtn" class="ghost">Export chats</button>
+                <button id="importBtn" class="ghost">Import chats</button>
+              </div>
+              <p class="muted" id="dataPathLine"></p>
+              <div class="row">
+                <button id="resetSettingsBtn" class="danger">Restore default settings</button>
+                <span id="resetStatus" class="muted small"></span>
+              </div>
+              <p class="muted" id="aboutLine"></p>
+            </div>
           </div>
-        </div>
-        <div class="card panel" id="sec-agent">
-          <div class="panel-head"><h2>Assistant &amp; tools</h2><span class="panel-head-side"><span id="agentPill" class="badge">Off</span><button type="button" class="help-btn" data-help="agent" title="Letting the assistant use tools" aria-label="Letting the assistant use tools">?</button></span></div>
-          <p class="muted">Let the assistant read, search and change files in one folder on this PC, run your commands and — if you switch it on — fetch a URL. It can only ever work inside that folder.</p>
-          <div class="row">
-            <button id="agentToggleBtn" class="ghost">Turn tools on</button>
-            <button id="agentWorkspaceBtn" class="ghost">Choose workspace…</button>
-          </div>
-          <p class="muted" id="agentWorkspaceLine">No workspace chosen yet.</p>
-          <div class="row">
-            <button id="agentReadsBtn" class="ghost">Ask before reads: off</button>
-            <button id="agentGrantsBtn" class="ghost">Remember write approvals: on</button>
-            <button id="agentNetBtn" class="ghost">Network tools: off</button>
-          </div>
-          <div class="row">
-            <label for="agentSteps" class="inline">Max tool steps per message</label>
-            <input id="agentSteps" type="number" min="1" max="25" style="width:90px">
-            <button id="agentClearBtn" class="ghost">Forget remembered approvals</button>
-          </div>
-          <p class="muted small" id="agentPolicyLine">Writing, deleting, running a command and fetching a URL always ask you first. Nothing is accepted automatically, and destructive actions are never remembered.</p>
-          <div id="agentToolList" class="tool-catalog"></div>
-        </div>
-        <div class="card panel" id="sec-ssh">
-          <div class="panel-head"><h2>SSH</h2><span class="panel-head-side"><span id="sshCount" class="badge">0 hosts</span><button type="button" class="help-btn" data-help="ssh" title="Remote shells through your own ssh" aria-label="Remote shells through your own ssh">?</button></span></div>
-          <p class="muted">Run commands and read files on machines you already reach with <code>ssh</code>. Passwords are never stored — use a key or your agent, as you would in a terminal.</p>
-          <div id="sshHostList" class="ssh-host-list"></div>
-          <label>Saved host</label>
-          <div class="row">
-            <input id="sshLabel" type="text" placeholder="Label (e.g. Home server)" style="flex:1" aria-label="Label">
-            <input id="sshHost" type="text" placeholder="host or IP" style="flex:1" aria-label="Host or IP address">
-          </div>
-          <div class="row">
-            <input id="sshUser" type="text" placeholder="user (optional)" style="flex:1" aria-label="User">
-            <input id="sshPort" type="number" min="1" max="65535" placeholder="port" style="width:90px" aria-label="Port">
-            <input id="sshKey" type="text" placeholder="key file (optional)" style="flex:1.4" aria-label="Key file path">
-          </div>
-          <div class="row">
-            <button id="sshSaveHostBtn" class="ghost">Save host</button>
-            <button id="sshRemoveHostBtn" class="ghost">Remove</button>
-            <button id="sshTestBtn" class="ghost">Run self-test</button>
-            <button id="sshForgetKeyBtn" class="ghost">Forget host key</button>
-          </div>
-          <label>Command</label>
-          <div class="row">
-            <input id="sshCmd" type="text" placeholder="uptime" style="flex:1" aria-label="Command to run">
-            <button id="sshRunBtn" class="ghost">Run</button>
-          </div>
-          <pre id="sshOut" class="code-out" aria-live="polite"></pre>
-          <label>Browse files</label>
-          <div class="row">
-            <input id="sshPath" type="text" placeholder="(login home)" style="flex:1" aria-label="Remote path">
-            <button id="sshUpBtn" class="ghost">Up</button>
-            <button id="sshListBtn" class="ghost">List</button>
-          </div>
-          <div id="sshFiles" class="ssh-files hidden"></div>
-          <div class="row">
-            <button id="sshPreviewBtn" class="ghost">Preview</button>
-            <button id="sshDownloadBtn" class="ghost">Save to workspace</button>
-            <span id="sshFileStatus" class="muted small"></span>
-          </div>
-          <pre id="sshPreview" class="code-out"></pre>
-          <div class="row">
-            <span class="muted small">Self-test</span>
-            <span id="sshScore" class="badge">not run</span>
-            <button id="sshCopyCfgBtn" class="ghost">Copy Host block</button>
-          </div>
-          <div id="sshFindings" class="ssh-findings"></div>
-          <p class="muted small" id="sshNote"></p>
-          <pre id="sshConfig" class="code-out"></pre>
-        </div>
-        <div class="card panel" id="sec-data">
-          <div class="panel-head"><h2>Data</h2><span class="panel-head-side"><span class="muted small">Portable</span><button type="button" class="help-btn" data-help="data" title="Your data, backups and reset" aria-label="Your data, backups and reset">?</button></span></div>
-          <div class="row">
-            <button id="openDataBtn" class="ghost">Open data folder</button>
-            <button id="exportBtn" class="ghost">Export chats</button>
-            <button id="importBtn" class="ghost">Import chats</button>
-          </div>
-          <p class="muted" id="dataPathLine"></p>
-          <div class="row">
-            <button id="resetSettingsBtn" class="danger">Restore default settings</button>
-            <span id="resetStatus" class="muted small"></span>
-          </div>
-          <p class="muted" id="aboutLine"></p>
         </div>
       </div>
     </section>
@@ -321,11 +332,11 @@
       <label for="botTask">Task — what should it do on every run?</label>
       <textarea id="botTask" rows="3" maxlength="2000" placeholder="e.g. Summarize today's calendar and remind me of the 3 most important things. Be brief."></textarea>
       <div class="row">
-        <div style="flex:1;min-width:150px"><label for="botProvider">Provider</label><select id="botProvider"></select></div>
+        <div class="w-md"><label for="botProvider">Provider</label><select id="botProvider"></select></div>
       </div>
       <div class="row">
-        <div style="flex:1;min-width:150px"><label for="botModel">Model</label><select id="botModel"></select></div>
-        <div style="flex:1;min-width:150px"><label for="botInterval">Repeat every</label>
+        <div class="w-md"><label for="botModel">Model</label><select id="botModel"></select></div>
+        <div class="w-md"><label for="botInterval">Repeat every</label>
           <select id="botInterval">
             <option value="60">Every minute</option>
             <option value="300">Every 5 minutes</option>
@@ -347,9 +358,9 @@
       </div>
     </div>
   </div>
-  <div id="bgModal" class="modal-backdrop hidden">
+  <div id="bgModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="bgModalTitle">
     <div class="modal">
-      <h2>Keep your bots running when the window is closed?</h2>
+      <h2 id="bgModalTitle">Keep your bots running when the window is closed?</h2>
       <p class="muted">Bots run while NexusChat Open is open. Keep the app in the tray and they keep working.</p>
       <div class="row">
         <button id="bgYesBtn" class="primary">Keep running in background</button>
@@ -365,7 +376,7 @@
         <p class="intro-kicker">Welcome aboard</p>
         <h1 class="intro-title" id="introTitle">Meet NexusChat Open.</h1>
         <p class="intro-sub">One desktop app for chat and scheduled bots — running on your machine, with your own provider key. Free and open source.</p>
-                <div class="intro-actions">
+        <div class="intro-actions">
           <button type="button" class="primary" id="introNextBtn">Continue</button>
         </div>
         <div class="intro-dots" aria-hidden="true"><span class="on"></span><span></span></div>
@@ -411,6 +422,7 @@
   </div>
   <div id="botMenu" class="bot-menu hidden"></div>
   <script src="models.js"></script>
+  <script src="markdown.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

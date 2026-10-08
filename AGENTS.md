@@ -13,12 +13,19 @@ cost time. Public contribution rules live in [CONTRIBUTING.md](CONTRIBUTING.md).
 | `npm run ui:check` | boots the real window, drives it over CDP, asserts the UI |
 | `npm run start:linux` | runs the app headless; extra args go to Electron |
 | `npm run icon` | regenerates `build/icon.png` + `src/renderer/logo.png` from `brand/kryvex-logo.png` |
+| `node scripts/screenshot.js --boot` | boots the real app over CDP and writes UI screenshots to `/tmp/opencode/shots/` |
 | `npm run dist:win` | builds the NSIS installer + portable exe via electron-builder |
+
+**Verification loop** — run all three before calling UI work done, in this order:
+
+1. `npm test` → **263 pass, 0 fail** (a dropped or skipped test is a regression, not noise).
+2. `npm run ui:check` → **43 live UI checks** asserted against the real window over CDP.
+3. `node scripts/screenshot.js --boot` → **13 PNGs** in `/tmp/opencode/shots/`, one per redesigned screen (the visual pass).
 
 Headless Linux (containers, CI, a remote box) needs none of `sudo`:
 `scripts/run-linux.sh` unpacks Electron's GTK 3 into `.electron-deps/`, skips
-the setuid sandbox and puts the window on `xvfb-run`. It backs the `smoke` and
-`ui:check` modes.
+the setuid sandbox and puts the window on `xvfb-run`. It backs the `smoke`,
+`ui:check` and screenshot `--boot` modes.
 
 ## Three traps, all of which have bitten already
 
@@ -49,7 +56,11 @@ src/main/       Electron main: ipc.js (every channel), store.js (settings +
                 at rest), updates.js (release check, checksum-verified
                 install)
 src/preload.js  the nexus.* bridge — one function per channel, nothing else
-src/renderer/   app.js (all UI), index.html, theme.css, logo.png
+src/renderer/   app.js (all UI), markdown.js (safe Markdown for assistant
+                replies — the global `NexusMarkdown`; streaming stays raw),
+                models.js, index.html (76px left rail of icon tabs + Help at
+                its foot, then the view panes), theme.css (the single
+                stylesheet — never add styles.css), logo.png
                 (generated — do not edit, run `npm run icon`)
 src/shared/     brand.js (rename the app here), providers.js (registry),
                 skills.js (prompt-level skill registry + composer),
@@ -57,12 +68,31 @@ src/shared/     brand.js (rename the app here), providers.js (registry),
                 directives.js (the [[tool …]] / [[bot …]] scanner),
                 updates.js (what counts as a safe update)
 scripts/        run-linux.sh (headless), ui-check.js (live UI over CDP),
-                gen-icon.js + png.js (the icon generator and its PNG codec)
+                screenshot.js (--boot: PNG tour of every screen into
+                /tmp/opencode/shots), gen-icon.js + png.js (the icon
+                generator and its PNG codec)
 brand/          kryvex-logo.png — the source every app logo is generated from
-tests/          node --test; pure modules are exercised directly, the
-                renderer contract is asserted as text plus a DOM-stub run,
-                and tests/agent*.test.js cover the tool layer
+tests/          node --test (263 tests: logic, storage, IPC contract, UI
+                wiring, markdown rendering); pure modules are exercised
+                directly, the renderer contract is asserted as text plus a
+                DOM-stub run, and tests/agent*.test.js cover the tool layer
 ```
+
+## The redesign test contract
+
+The authoritative list is §0 of the redesign spec ("UI Redesign Spec" —
+`/tmp/opencode/spec/DESIGN-SPEC.md`; that `/tmp` copy may not survive a reboot,
+so the essentials are repeated here and are enforced by `npm test`):
+
+- `src/renderer/theme.css` is the **only** stylesheet — `src/renderer/styles.css`
+  must never be created, and `index.html` links `theme.css` and nothing else.
+- Script order in `index.html`: `models.js`, then `markdown.js`, then `app.js`.
+- `app.js` ends with `boot().catch(`, and no `innerHTML =` in it may interpolate
+  or concatenate data — literal strings only.
+- Literal CSS rules from spec §0 stay verbatim in `theme.css`, e.g.
+  `#view-settings.active, #view-providers.active { overflow-y: auto; }`.
+- At least 8 `.help-btn` buttons, each with `data-help`, `aria-label` and `title`
+  (`#helpBtn` keeps `data-help="welcome"`).
 
 ## The tool layer, in one paragraph
 
@@ -93,7 +123,9 @@ exists to catch a channel or element that exists on one side only.
 - Comments and copy in the app are written for the person reading them, not for a
   changelog.
 - The privacy promise is a feature: no telemetry, no backend, no network calls
-  except to the provider the user configured and the SSH hosts the user saved (over their own ssh, BatchMode — no passwords).
+  except to the provider the user configured, the SSH hosts the user saved (over
+  their own ssh, BatchMode — no passwords), and — packaged builds only — the
+  GitHub releases feed that the update pill reads.
 
 ## Shipping
 

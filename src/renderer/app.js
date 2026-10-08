@@ -23,6 +23,25 @@ let toolsOn = false;            // per-chat: may the assistant use tools this tu
 let pendingTool = null;         // the permission request on screen
 let toolQueue = [];            // requests that arrived while one was showing
                                  // (the main process waits on each, so none may be dropped)
+let toolReturnTo = null;        // focus goes back here when the permission prompt closes
+let botReturnTo = null;         // …and here when the bot editor closes
+let introReturnTo = null;       // …the first-run overlays each keep their own
+let bgReturnTo = null;
+let updateReturnTo = null;
+
+/** Remember who had focus before a dialog opens, so it can be handed back.
+ *  Body and the dialog itself are not worth remembering: there is nowhere
+ *  to return to. The guide window (openHelp) does exactly this. */
+function stashReturnFocus(modal) {
+  const active = document.activeElement;
+  if (!active || active === document.body || active === modal) return null;
+  if (typeof active.focus !== 'function') return null;
+  return active;
+}
+
+function handBackFocus(stashed) {
+  if (stashed && stashed.focus) stashed.focus();
+}
 
 /* ================================================================== */
 /* Boot                                                               */
@@ -45,6 +64,8 @@ async function boot() {
   bindComposer();
   bindModelPicker();
   bindChatEvents();
+  bindConversationSearch();
+  bindMarkdownCopy();
   bindSettings();
   bindBots();
   bindBotToolbar();
@@ -76,58 +97,177 @@ async function boot() {
 
 function bindTabs() {
   $$('#tabs .tab').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+  // The active tab is decided by markup at boot, so mark it here too —
+  // aria-current is not something activateTab() gets to run for on load.
+  const current = $('#tabs .tab.active');
+  if (current) current.setAttribute('aria-current', 'page');
 }
 
 function activateTab(name) {
-  $$('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('#tabs .tab').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
   if (name === 'providers') renderProviders();
   if (name === 'settings') renderSettings();
   if (name === 'skills') renderSkills();
-  if (name === 'bots') { loadBots(); }
+  if (name === 'bots') {
+    // First entry paints at once: loadBots() is async, and an empty panel
+    // must never be what the tab shows while it waits.
+    if (!currentBot()) renderBotEmptyState();
+    loadBots();
+  }
 }
 
 /* ================================================================== */
 /* Conversations                                                      */
 /* ================================================================== */
 
+let convQuery = '';             // sidebar search, as typed into #convSearch
+let convCache = [];             // last conversations:list payload, newest first
+
+/** The age buckets the sidebar groups rows under, newest first. */
+const CONV_GROUPS = ['Today', 'Yesterday', 'Previous 7 days', 'Older'];
+
+/** Midnight `offsetDays` back — computed on the calendar, so DST cannot skew it. */
+function dayStart(offsetDays) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - offsetDays);
+  return d.getTime();
+}
+
+function convGroupOf(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return 'Older';
+  if (t >= dayStart(0)) return 'Today';
+  if (t >= dayStart(1)) return 'Yesterday';
+  if (t >= dayStart(7)) return 'Previous 7 days';
+  return 'Older';
+}
+
+/** Row time: "now", "4m", "2h", "Yesterday", "Mon" — a date once it ages out. */
+function convRelTime(iso) {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const group = convGroupOf(iso);
+  if (group === 'Today') {
+    const s = Math.max(0, (Date.now() - t) / 1000);
+    if (s < 60) return 'now';
+    if (s < 3600) return Math.floor(s / 60) + 'm';
+    return Math.floor(s / 3600) + 'h';
+  }
+  if (group === 'Yesterday') return 'Yesterday';
+  const d = new Date(t);
+  if (group === 'Previous 7 days') return d.toLocaleDateString(undefined, { weekday: 'short' });
+  return d.toLocaleDateString();
+}
+
+/** One sidebar row: title, relative time, and the delete button.
+ *  The open action is bound on the row itself, so every pixel of it — the
+ *  padding band that lights up on hover included — opens the chat. The inner
+ *  wrapper stays the focusable, role="button" element, and the delete button
+ *  remains its sibling, not its descendant (a button inside a button is not a
+ *  control a screen reader can walk); the delete handler stops propagation so
+ *  its clicks never reach the row's open action. */
+function convRow(c) {
+  const item = document.createElement('div');
+  item.className = 'conv-item' + (c.id === currentConvId ? ' active' : '');
+  const openEl = document.createElement('div');
+  openEl.className = 'conv-open';
+  // Rows are actionable: reachable by keyboard, and announced as buttons.
+  openEl.tabIndex = 0;
+  openEl.setAttribute('role', 'button');
+  openEl.setAttribute('aria-label', 'Open chat: ' + c.title);
+  if (c.id === currentConvId) openEl.setAttribute('aria-current', 'true');
+  const open = () => { currentConvId = c.id; refreshConversations(); renderMessages(); };
+  item.addEventListener('click', open);
+  // Focus and the Enter/Space activation stay on .conv-open, where the
+  // role="button" and aria-label live.
+  openEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); open(); }
+  });
+  const title = document.createElement('span');
+  title.className = 'conv-title';
+  title.textContent = c.title;
+  title.title = c.title;
+  const meta = document.createElement('span');
+  meta.className = 'conv-meta';
+  meta.textContent = convRelTime(c.updatedAt);
+  // The row time is a label, not data: a missing or unparseable updatedAt
+  // falls back to an empty meta, never a literal "Invalid Date".
+  const updated = Date.parse(c.updatedAt);
+  if (Number.isFinite(updated)) meta.title = new Date(updated).toLocaleString();
+  const del = document.createElement('button');
+  del.className = 'conv-del';
+  del.type = 'button';
+  del.textContent = '✕';
+  del.title = 'Delete chat';
+  del.setAttribute('aria-label', 'Delete chat: ' + c.title);
+  del.addEventListener('click', async e => {
+    e.stopPropagation();
+    await nexus.deleteConversation(c.id);
+    if (currentConvId === c.id) { currentConvId = null; renderMessages(); }
+    refreshConversations();
+  });
+  openEl.appendChild(title);
+  openEl.appendChild(meta);
+  item.appendChild(openEl);
+  item.appendChild(del);
+  return item;
+}
+
+/** Paint the cached conversations: search first, then the age groups.
+ *  Rows are DOM nodes throughout — a title is model output, never markup. */
+function paintConversations() {
+  const list = $('#convList');
+  if (!list) return;
+  list.innerHTML = '';
+  const q = convQuery.trim().toLowerCase();
+  const rows = [...convCache]
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+    .filter(c => !q || String(c.title || '').toLowerCase().includes(q));
+  if (!rows.length) {
+    const empty = document.createElement('div');
+    empty.className = 'conv-empty';
+    // Two distinct situations: nothing to show at all, and nothing matching
+    // the filter. The second keeps its search wording.
+    empty.textContent = q
+      ? 'No chats match "' + convQuery.trim() + '".'
+      : 'No chats yet — start one above.';
+    list.appendChild(empty);
+    return;
+  }
+  for (const label of CONV_GROUPS) {
+    const group = rows.filter(c => convGroupOf(c.updatedAt) === label);
+    if (!group.length) continue;
+    const head = document.createElement('div');
+    head.className = 'conv-group';
+    const name = document.createElement('span');
+    name.className = 'conv-group-label';
+    name.textContent = label;
+    head.appendChild(name);
+    list.appendChild(head);
+    for (const c of group) list.appendChild(convRow(c));
+  }
+}
+
 async function refreshConversations() {
   const convos = await nexus.listConversations();
-  const list = $('#convList');
-  list.innerHTML = '';
-  for (const c of convos) {
-    const item = document.createElement('div');
-    item.className = 'conv-item' + (c.id === currentConvId ? ' active' : '');
-    // Rows are actionable: reachable by keyboard, and announced as buttons.
-    item.tabIndex = 0;
-    item.setAttribute('role', 'button');
-    item.setAttribute('aria-label', 'Open chat: ' + c.title);
-    if (c.id === currentConvId) item.setAttribute('aria-current', 'true');
-    const open = () => { currentConvId = c.id; refreshConversations(); renderMessages(); };
-    item.addEventListener('click', open);
-    item.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); open(); }
-    });
-    const title = document.createElement('span');
-    title.className = 'conv-title';
-    title.textContent = c.title;
-    title.title = c.title;
-    const del = document.createElement('button');
-    del.className = 'conv-del';
-    del.type = 'button';
-    del.textContent = '✕';
-    del.title = 'Delete chat';
-    del.setAttribute('aria-label', 'Delete chat: ' + c.title);
-    del.addEventListener('click', async e => {
-      e.stopPropagation();
-      await nexus.deleteConversation(c.id);
-      if (currentConvId === c.id) { currentConvId = null; renderMessages(); }
-      refreshConversations();
-    });
-    item.appendChild(title);
-    item.appendChild(del);
-    list.appendChild(item);
-  }
+  convCache = Array.isArray(convos) ? convos : [];
+  paintConversations();
+}
+
+function bindConversationSearch() {
+  const box = $('#convSearch');
+  if (!box) return;
+  box.addEventListener('input', () => {
+    convQuery = box.value || '';
+    paintConversations();
+  });
 }
 
 async function newChat() {
@@ -219,18 +359,28 @@ function renderModelList() {
   setActiveModelOption(Math.min(modelActive, modelOptions.length - 1));
 }
 
-/** Move the highlight (and aria-activedescendant) to option i. */
+/** Move the highlight (and aria-activedescendant) to option i.
+ *  The attribute goes on the combobox that owns the list — that is the node
+ *  a screen reader tracks — and stays on the listbox too, which is the shape
+ *  the wiring test reads. */
 function setActiveModelOption(i) {
   modelActive = i;
   modelOptions.forEach((o, n) => o.classList.toggle('on', n === i));
   const on = modelOptions[i];
   const list = $('#modelList');
+  const search = $('#modelSearch');
+  const active = on ? on.id : null;
+  if (list && list.setAttribute) {
+    if (active) list.setAttribute('aria-activedescendant', active);
+    else if (list.removeAttribute) list.removeAttribute('aria-activedescendant');
+  }
+  if (search && search.setAttribute) {
+    if (active) search.setAttribute('aria-activedescendant', active);
+    else if (search.removeAttribute) search.removeAttribute('aria-activedescendant');
+  }
   if (on) {
-    list.setAttribute('aria-activedescendant', on.id);
     // Scroll after the class swap: the highlight must be visible at once.
     if (on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
-  } else if (list.removeAttribute) {
-    list.removeAttribute('aria-activedescendant');
   }
 }
 
@@ -242,6 +392,8 @@ function openModelPop() {
   modelOpen = true;
   $('#modelPop').classList.remove('hidden');
   $('#modelBtn').setAttribute('aria-expanded', 'true');
+  const searchBox = $('#modelSearch');
+  if (searchBox) searchBox.setAttribute('aria-expanded', 'true');
   $('#modelSearch').value = '';
   modelActive = -1;
   renderModelList();
@@ -256,6 +408,8 @@ function closeModelPop(restoreFocus) {
   modelOpen = false;
   $('#modelPop').classList.add('hidden');
   $('#modelBtn').setAttribute('aria-expanded', 'false');
+  const searchBox = $('#modelSearch');
+  if (searchBox) searchBox.setAttribute('aria-expanded', 'false');
   if (restoreFocus !== false) $('#modelBtn').focus();
 }
 
@@ -358,7 +512,31 @@ function setStreamingUI(on) {
   const btn = $('#modelBtn');
   if (btn) btn.disabled = on;
   if (on) closeModelPop(false);
+  const pane = $('#messages');
+  if (pane && pane.setAttribute) pane.setAttribute('aria-busy', on ? 'true' : 'false');
+  // A live region announces on *change*, so drop the last reply now: a new
+  // one landing with identical text must still be read out.
+  if (on) announceChat('');
   updateRegenBtn();
+  if (!on) {
+    // Send handed the composer back — refocus it unless the user has moved
+    // on to something else while the reply was coming.
+    const ae = document.activeElement;
+    if (!ae || ae === document.body) {
+      const inp = $('#input');
+      if (inp && inp.focus) inp.focus();
+    }
+  }
+}
+
+/** The transcript is rebuilt from scratch on every paint, which would have a
+ *  live region inside it read the whole conversation back each time — so
+ *  completions are announced from this node sitting outside the transcript. */
+function announceChat(text) {
+  const el = $('#chatAnnouncer');
+  if (!el) return;
+  const value = text == null ? '' : String(text);
+  el.textContent = value.length > 1000 ? value.slice(0, 1000) : value;
 }
 
 /* Regenerate only makes sense once the conversation has at least one user
@@ -398,6 +576,89 @@ function clearStreamBubble() {
   if (streamBubble) { streamBubble.remove(); streamBubble = null; }
 }
 
+/* ---------------- markdown ---------------- */
+
+/**
+ * Paint one message through markdown.js when it is loaded (a plain <script>
+ * another agent may add before app.js), otherwise fall back to the raw text.
+ * Either way the message's textContent is the reply itself: a paragraph with
+ * no markup yields exactly the source string, no separators or labels.
+ */
+function renderMarkdownBlocks(el, text) {
+  const raw = text == null ? '' : String(text);
+  if (typeof NexusMarkdown !== 'undefined' && NexusMarkdown
+      && typeof NexusMarkdown.render === 'function') {
+    const frag = NexusMarkdown.render(raw, document);
+    if (frag && typeof frag.appendChild === 'function' && frag.childNodes) {
+      el.textContent = '';
+      el.appendChild(frag);
+      return;
+    }
+  }
+  el.textContent = raw;
+}
+
+/** Clipboard write for every copy affordance. Only ever runs on a click, so a
+ *  VM test that renders without a clipboard never reaches `navigator`. */
+async function copyTextToClipboard(text) {
+  const value = text == null ? '' : String(text);
+  if (!value) return false;
+  if (typeof navigator === 'undefined' || !navigator.clipboard
+      || typeof navigator.clipboard.writeText !== 'function') return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Copy, then say so on the button for a moment — the confirmation has to
+ *  live on the control that was pressed, not a toast across the screen. */
+async function copyAndConfirm(btn, text) {
+  const ok = await copyTextToClipboard(text);
+  if (!ok || !btn) return;
+  btn.textContent = 'Copied';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
+}
+
+/** One delegated listener per transcript pane: repaints replace the rows,
+ *  never the pane, so the listener survives every renderMessages(). */
+function bindMarkdownCopy() {
+  for (const sel of ['#messages', '#botMessages']) {
+    const pane = $(sel);
+    if (!pane) continue;
+    pane.addEventListener('click', e => {
+      const target = e && e.target;
+      const btn = target && typeof target.closest === 'function'
+        ? target.closest('.md-copy')
+        : null;
+      if (!btn) return;
+      const pre = btn.parentElement;
+      const code = pre && typeof pre.querySelector === 'function'
+        ? pre.querySelector('code')
+        : null;
+      copyAndConfirm(btn, code ? code.textContent : '');
+    });
+  }
+}
+
+/** The hover action on an assistant turn: copies the turn's raw text (the
+ *  markdown source, not the rendered nodes) and lives outside .msg, so the
+ *  message textContent assertions stay clean. */
+function turnActions(raw) {
+  const wrap = document.createElement('div');
+  wrap.className = 'turn-actions';
+  const btn = document.createElement('button');
+  btn.className = 'msg-copy';
+  btn.type = 'button';
+  btn.textContent = 'Copy';
+  btn.setAttribute('aria-label', 'Copy message');
+  btn.addEventListener('click', () => copyAndConfirm(btn, raw.join('\n\n')));
+  wrap.appendChild(btn);
+  return wrap;
+}
+
 async function renderMessages() {
   const box = $('#messages');
   // Clicking conversations quickly starts overlapping loads; the slower one
@@ -413,6 +674,9 @@ async function renderMessages() {
     ? conv.tools
     : !!(agentState && agentState.enabled && agentState.workspaceOk);
   updateToolsToggle();
+  // The header names the open chat, and says nothing when none is open.
+  const heading = $('#chatTitle');
+  if (heading) heading.textContent = (conv && conv.title) ? conv.title : '';
   if (!conv || !conv.messages.length) {
     canRegenerate = false;
     updateRegenBtn();
@@ -508,6 +772,13 @@ async function onChatDone(payload) {
   setStreamingUI(false);
   streamBubble = null;
   if (payload.message) {
+    // The same "never speak for another chat" rule onChatDelta paints by.
+    if (!currentConvId || payload.conversationId === currentConvId) {
+      const content = typeof payload.message === 'string'
+        ? payload.message
+        : payload.message.content;
+      announceChat(content);
+    }
     await refreshConversations();
   }
   renderMessages();
@@ -518,6 +789,7 @@ function onChatError(payload) {
   clearStreamBubble();
   if (!currentConvId || payload.conversationId === currentConvId) {
     appendMsg('assistant', '! ' + payload.message, 'error');
+    announceChat(payload.message);
   }
 }
 
@@ -657,7 +929,7 @@ function renderProviders() {
     name.textContent = p.name;
     const kind = document.createElement('span');
     kind.className = 'pcard-kind';
-    kind.textContent = p.offline ? 'LOCAL & FREE' : (p.requiresBaseUrl ? 'SELF-HOSTED' : 'API KEY');
+    kind.textContent = p.offline ? 'Local & free' : (p.requiresBaseUrl ? 'Self-hosted' : 'API key');
     if (p.offline) kind.className = 'pcard-kind local';
     head.appendChild(dot);
     head.appendChild(name);
@@ -813,6 +1085,9 @@ function renderSettings() {
 async function saveSetting(patch) {
   try {
     state.settings = await nexus.updateSettings(patch);
+    // state.settings is replaced wholesale, so the header chip repaints too —
+    // a stale model name must never survive a settings write.
+    paintModelPicker();
     flashSaved($('#settingsSaved'));
     return true;
   } catch (e) {
@@ -880,6 +1155,18 @@ function bindSettings() {
       toast('Import failed: ' + (r.error || 'unknown'), 'error');
     }
   });
+  // The section links are anchors, not tabs: every panel is on the page and
+  // the link scrolls to one. Mark the section you jumped to, so the current
+  // one is announced rather than only scrolled to.
+  const sections = $$('.settings-nav a');
+  if (sections.length) {
+    const markSection = (link) => sections.forEach(a => {
+      if (a === link) a.setAttribute('aria-current', 'true');
+      else if (a.removeAttribute) a.removeAttribute('aria-current');
+    });
+    sections.forEach(a => a.addEventListener('click', () => markSection(a)));
+    markSection(sections[0]);
+  }
   bindSsh();
 }
 
@@ -1361,6 +1648,8 @@ function updateToolsToggle() {
   btn.classList.toggle('hidden', !ready);
   btn.textContent = toolsOn ? 'Tools on' : 'Tools off';
   btn.classList.toggle('on', toolsOn);
+  // It is a switch, not a label: say which state it is in, not just show it.
+  if (btn.setAttribute) btn.setAttribute('aria-pressed', String(toolsOn));
   btn.title = toolsOn
     ? 'The assistant may use tools on the workspace — it still asks before anything changes.'
     : 'Let the assistant use tools in this chat.';
@@ -1398,6 +1687,11 @@ function showToolAsk(request) {
   // "Allow for this session" only exists where remembering is safe.
   if (always) always.classList.toggle('hidden', request.canRemember !== true);
   const modal = $('#toolModal');
+  // Remember the opener only for the first prompt of a run: a queued one
+  // would otherwise point focus back at a button this dialog just hid.
+  if (modal && modal.classList.contains('hidden') && !toolReturnTo) {
+    toolReturnTo = stashReturnFocus(modal);
+  }
   if (modal) modal.classList.remove('hidden');
   const deny = $('#toolDenyBtn');
   if (deny) deny.focus();
@@ -1415,7 +1709,10 @@ async function answerTool(decision) {
     toast('Could not answer that prompt — treating it as denied.', 'error');
   }
   // Answer whatever was waiting behind this one.
-  if (toolQueue.length) showToolAsk(toolQueue.shift());
+  if (toolQueue.length) { showToolAsk(toolQueue.shift()); return; }
+  const back = toolReturnTo;
+  toolReturnTo = null;
+  handBackFocus(back);
 }
 
 function bindAgent() {
@@ -1726,10 +2023,15 @@ function renderBotList() {
 function botRow(bot) {
   const item = document.createElement('div');
   item.className = 'conv-item bot-item' + (bot.id === currentBotId ? ' active' : '');
-  item.tabIndex = 0;
-  item.setAttribute('role', 'button');
-  item.setAttribute('aria-label', 'Open bot: ' + bot.name);
-  if (bot.id === currentBotId) item.setAttribute('aria-current', 'true');
+  // The row carries the open click (so its hover padding is not a dead band);
+  // the inner wrapper keeps the focus, role and the kebab's sibling — never
+  // nested inside another control.
+  const openEl = document.createElement('div');
+  openEl.className = 'conv-open';
+  openEl.tabIndex = 0;
+  openEl.setAttribute('role', 'button');
+  openEl.setAttribute('aria-label', 'Open bot: ' + bot.name);
+  if (bot.id === currentBotId) openEl.setAttribute('aria-current', 'true');
     // Status dot, like a chat app: live while the schedule runs.
     const avatar = document.createElement('span');
     avatar.className = 'bot-avatar'; // wing mark, not emoji — one bot identity everywhere
@@ -1752,25 +2054,29 @@ function botRow(bot) {
     const time = document.createElement('span');
     time.className = 'bot-time';
     time.textContent = botRelTime(bot);
-    item.appendChild(avatar);
-    item.appendChild(main);
-    item.appendChild(time);
+    openEl.appendChild(avatar);
+    openEl.appendChild(main);
+    openEl.appendChild(time);
     // Kebab (⋮) menu, top-right of each bot card: Run now / Pause / Edit / Delete.
     const kebab = document.createElement('button');
     kebab.className = 'bot-kebab';
+    kebab.type = 'button';
     kebab.title = 'Bot actions';
     kebab.setAttribute('aria-label', bot.name + ' actions');
+    kebab.setAttribute('aria-haspopup', 'menu');
+    kebab.setAttribute('aria-expanded', 'false');
     kebab.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>';
     kebab.addEventListener('click', e => {
       e.stopPropagation();
       openBotMenu(bot, kebab);
     });
-    item.appendChild(kebab);
   const open = () => selectBot(bot.id);
   item.addEventListener('click', open);
-  item.addEventListener('keydown', e => {
+  openEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); open(); }
   });
+  item.appendChild(openEl);
+  item.appendChild(kebab);
   return item;
 }
 
@@ -1780,11 +2086,18 @@ function bindBotToolbar() {
 }
 
 /* --- bot kebab menu --- */
+let botMenuAnchor = null;   // kebab that opened the menu — carries aria-expanded
+
 function hideBotMenu() {
   $('#botMenu').classList.add('hidden');
+  if (botMenuAnchor) {
+    botMenuAnchor.setAttribute('aria-expanded', 'false');
+    botMenuAnchor = null;
+  }
 }
 
 function openBotMenu(bot, anchor) {
+  hideBotMenu();   // resets the previous anchor's aria-expanded on the way past
   const menu = $('#botMenu');
   menu.innerHTML = '';
   const running = bot.status === 'running';
@@ -1803,6 +2116,8 @@ function openBotMenu(bot, anchor) {
     menu.appendChild(b);
   }
   menu.classList.remove('hidden');
+  botMenuAnchor = anchor;
+  if (anchor && anchor.setAttribute) anchor.setAttribute('aria-expanded', 'true');
   // Position below the kebab, right-aligned to it, clamped to the viewport.
   const r = anchor.getBoundingClientRect();
   menu.style.visibility = 'hidden';
@@ -1826,13 +2141,46 @@ function selectBot(id) {
   loadBotChat(false);
 }
 
+/**
+ * The bots pane when no bot is open. Hiding the pane instead left a blank
+ * right-hand panel that looked broken, so the slot always carries one card:
+ * what a bot is, and (with no bots yet) the button that makes the first one.
+ * Built from DOM nodes — copy is text, never markup.
+ */
+function renderBotEmptyState() {
+  const box = $('#botMessages');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.textContent = '';
+  const empty = document.createElement('div');
+  empty.className = 'empty-state';
+  const logo = document.createElement('span');
+  logo.className = 'logo';
+  const title = document.createElement('h1');
+  title.textContent = bots.length ? 'No bot selected' : 'Create your first bot';
+  const line = document.createElement('p');
+  line.className = 'muted small';
+  line.textContent = 'A bot is a named task that runs on a schedule — give it one and the results land here while the app is open.';
+  empty.appendChild(logo);
+  empty.appendChild(title);
+  empty.appendChild(line);
+  if (!bots.length) {
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'primary';
+    create.textContent = 'Create a bot';
+    create.addEventListener('click', () => openBotModal(false));
+    empty.appendChild(create);
+  }
+  box.appendChild(empty);
+}
+
 function renderBotHeader() {
   const bot = currentBot();
   const has = !!bot;
   $('#botTaskLine').classList.toggle('hidden', !has);
   $('#botComposer').classList.toggle('hidden', !has);
-  $('#botMessages').classList.toggle('hidden', !has);
-  if (!bot) return;
+  if (!bot) { renderBotEmptyState(); return; }
   // Status panel: status pill, schedule, next run.
   const task = $('#botTaskLine');
   task.innerHTML = '';
@@ -1891,7 +2239,7 @@ function botMsgNearBottom() {
 async function loadBotChat(quiet) {
   const bot = currentBot();
   const box = $('#botMessages');
-  if (!bot) return;
+  if (!bot) { renderBotEmptyState(); return; }
   try {
     const r = await nexus.botChat(bot.id);
     if (!r.ok) throw new Error(r.error || 'Failed.');
@@ -1903,10 +2251,14 @@ async function loadBotChat(quiet) {
 
 /* Turn-grouped message rendering: one .turn per speaker change, bot avatar
    once at the top of each bot turn, timestamps on their own mono line.
+   Assistant text is painted through markdown.js (headings, lists, code);
+   user text stays plain, and the turn keeps a Copy action outside .msg.
    Also guards against the duplicate-message data bug by dropping consecutive
    assistant messages with identical text. */
 function renderTurnMessages(box, messages) {
   let turn = null;
+  let turnBody = null;
+  let turnRaw = null;        // the assistant turn's source text, for Copy
   let prevRole = null;
   let prevAssistantText = null;
   for (const m of messages) {
@@ -1937,20 +2289,27 @@ function renderTurnMessages(box, messages) {
       const body = document.createElement('div');
       body.className = 'turn-body';
       turn.appendChild(body);
+      turnBody = body;
+      turnRaw = role === 'assistant' ? [] : null;
+      if (turnRaw) turn.appendChild(turnActions(turnRaw));
       box.appendChild(turn);
       prevRole = role;
     }
-    const body = turn.querySelector('.turn-body');
     const div = document.createElement('div');
     div.className = 'msg ' + role;
-    div.textContent = m.content;
+    if (role === 'user') {
+      div.textContent = m.content;
+    } else {
+      renderMarkdownBlocks(div, m.content);
+      if (turnRaw) turnRaw.push(m.content == null ? '' : String(m.content));
+    }
     if (m.ts) {
       const t = document.createElement('span');
       t.className = 'msg-time';
       t.textContent = new Date(m.ts).toLocaleString();
       div.appendChild(t);
     }
-    body.appendChild(div);
+    turnBody.appendChild(div);
   }
 }
 
@@ -2044,6 +2403,10 @@ async function botAction(act, id = currentBotId) {
 
 function openBotModal(edit, editId) {
   const bot = edit ? (editId ? bots.find(b => b.id === editId) || null : currentBot()) : null;
+  // Only the first open of a run owns a return address: the Escape handler
+  // closes this dialog even when it is already closed.
+  const dlg = $('#botModal');
+  if (dlg && dlg.classList.contains('hidden')) botReturnTo = stashReturnFocus(dlg);
   editingBotId = bot ? bot.id : null;
   $('#botModalTitle').textContent = bot ? 'Edit bot — ' + bot.name : 'New bot';
   $('#botName').value = bot ? bot.name : '';
@@ -2061,8 +2424,16 @@ function openBotModal(edit, editId) {
 }
 
 function closeBotModal() {
+  const modal = $('#botModal');
+  const wasOpen = modal && !modal.classList.contains('hidden');
   editingBotId = null;
-  $('#botModal').classList.add('hidden');
+  if (modal) modal.classList.add('hidden');
+  // Escape calls this unconditionally, so only hand focus back if it was up.
+  if (wasOpen) {
+    const back = botReturnTo;
+    botReturnTo = null;
+    handBackFocus(back);
+  }
 }
 
 /* --- per-bot skills picker --- */
@@ -2407,13 +2778,24 @@ function maybePromptUpdate() {
   if (state.settings.dismissedUpdate === updateInfo.latest) return; // asked once for this version
   const modal = $('#updateModal');
   if (!modal.classList.contains('hidden')) return;
+  updateReturnTo = stashReturnFocus(modal);
   $('#updateModalBody').textContent = 'Version ' + updateInfo.latest
     + ' is ready to install — you are on ' + updateInfo.current + '.';
   modal.classList.remove('hidden');
+  // The install is the point of the prompt, so that is where focus lands.
+  const install = $('#updateInstallBtn');
+  if (install && install.focus) install.focus();
 }
 
 function closeUpdateModal() {
-  $('#updateModal').classList.add('hidden');
+  const modal = $('#updateModal');
+  const wasOpen = !modal.classList.contains('hidden');
+  modal.classList.add('hidden');
+  if (wasOpen) {
+    const back = updateReturnTo;
+    updateReturnTo = null;
+    handBackFocus(back);
+  }
 }
 
 async function dismissUpdateModal() {
@@ -2489,21 +2871,41 @@ function maybeShowIntro(done) {
   if (!state.settings.introDone) {
     const intro = $('#intro');
     if (!intro) { finish(); return; }
+    introReturnTo = stashReturnFocus(intro);
     intro.classList.remove('hidden');
+    const openPrimary = $('#introNextBtn');
+    if (openPrimary && openPrimary.focus) openPrimary.focus();
     const showStep = (n) => {
       $('#introStep1').classList.toggle('on', n === 1);
       $('#introStep2').classList.toggle('on', n === 2);
+      // The primary action of the step on screen is where Tab starts.
+      const primary = $(n === 1 ? '#introNextBtn' : '#introDoneBtn');
+      if (primary && primary.focus) primary.focus();
     };
     $('#introNextBtn').addEventListener('click', () => showStep(2));
     const closeIntro = async (gotoProviders) => {
+      if (intro.classList.contains('hidden')) return;   // already answered
       try { state.settings = await nexus.updateSettings({ introDone: true }); } catch { /* already shown */ }
+      // Hand focus back before the next overlay opens — done() chains the
+      // background prompt, which stashes whatever is focused right now.
+      const back = introReturnTo;
+      introReturnTo = null;
+      handBackFocus(back);
+      if (!back && !gotoProviders && $('#input')) $('#input').focus();
       finish();
       if (gotoProviders) activateTab('providers');
-      else $('#input')?.focus();
     };
     $('#introDoneBtn').addEventListener('click', () => closeIntro(false));
     $('#introProvidersBtn').addEventListener('click', () => closeIntro(true));
     $('#introSkipBtn').addEventListener('click', () => closeIntro(false));
+    // Escape = the skipping action, wired on the dialog itself (focus lives
+    // inside it) and inert the moment it is hidden.
+    intro.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (intro.classList.contains('hidden')) return;
+      e.preventDefault();
+      closeIntro(false);
+    });
   } else {
     finish();
   }
@@ -2514,14 +2916,39 @@ function maybeShowIntro(done) {
 /* ================================================================== */
 function maybeShowBackgroundPrompt() {
   if (state.settings.runInBackground !== null && state.settings.runInBackground !== undefined) return;
-  $('#bgModal').classList.remove('hidden');
-  $('#bgYesBtn').addEventListener('click', () => setBackgroundMode(true, true), { once: true });
-  $('#bgNoBtn').addEventListener('click', () => setBackgroundMode(false, true), { once: true });
+  const modal = $('#bgModal');
+  bgReturnTo = stashReturnFocus(modal);
+  modal.classList.remove('hidden');
+  // The answer is written asynchronously, so one flag keeps a fast second
+  // Escape (or a click straight after) from submitting the choice twice.
+  let answered = false;
+  const answer = (on) => {
+    if (answered) return;
+    answered = true;
+    setBackgroundMode(on, true);
+  };
+  $('#bgYesBtn').addEventListener('click', () => answer(true), { once: true });
+  $('#bgNoBtn').addEventListener('click', () => answer(false), { once: true });
+  // Declining is the negative action, so it is the one that takes focus —
+  // and the dialog would otherwise be a keyboard dead end.
+  const decline = $('#bgNoBtn');
+  if (decline && decline.focus) decline.focus();
+  modal.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (answered || modal.classList.contains('hidden')) return;
+    e.preventDefault();
+    answer(false);
+  });
 }
 
 async function setBackgroundMode(on, fromPrompt) {
   state.settings = await nexus.updateSettings({ runInBackground: on });
-  if (fromPrompt) $('#bgModal').classList.add('hidden');
+  if (fromPrompt) {
+    $('#bgModal').classList.add('hidden');
+    const back = bgReturnTo;
+    bgReturnTo = null;
+    handBackFocus(back);
+  }
   renderBackgroundSetting();
   toast(on
     ? 'Background mode on — closing the window keeps your bots working.'
