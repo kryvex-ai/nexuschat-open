@@ -1,11 +1,11 @@
 /* ============================================================================
-   NexusChat Open — "Instrument" design system
-   A graphite panel: neutral rail and lists, one volt accent that marks what
-   the user can act on, and three status hues that mean exactly one thing each
-   (green worked, amber look at this, red this stops something).
-   Bricolage display / Hanken body / IBM Plex mono (bundled, offline-safe).
-   Every raw color lives in :root or [data-theme="dark"] — everything else
-   reads a token.
+   NexusChat Open — "Plain" design system
+   A normal black-and-white app: one neutral palette, one top bar, one
+   sidebar per view, and solid black/white primary actions. Status hues
+   (green/amber/red/blue) only ever mark a status next to a word, never
+   the chrome itself.
+   Bundled fonts, offline-safe. Every raw color lives in :root or
+   [data-theme="dark"] — everything else reads a token.
    ============================================================================ */
 
 /* ---------------- bundled fonts ---------------- */
@@ -74,8 +74,8 @@
 
   /* Surfaces */
   --bg: #FFFFFF;
-  --rail-bg: #EDEDEF;
-  --sidebar-bg: #F6F6F7;
+  --rail-bg: #FFFFFF;
+  --sidebar-bg: #F7F7F8;
   --panel: #FFFFFF;
   --panel-soft: #F6F6F7;
   --surface-raised: #FFFFFF;
@@ -96,19 +96,19 @@
   --muted: #646970;
   --placeholder: #6E737C;
 
-  /* Brand + status. --accent-brand / --volt are the hue; --accent is the
-     fill a label sits on; --volt-text is the same hue dark enough to read
-     as text on a light surface. */
-  --accent-brand: #8FBF12;
-  --volt: #8FBF12;
-  --volt-text: #4E7A00;
-  --accent: #C6F24E;
-  --on-accent: #12160A;
-  --on-accent-soft: rgba(18, 22, 10, 0.72);
-  --accent-soft: rgba(143, 191, 18, 0.14);
-  --volt-soft: rgba(143, 191, 18, 0.14);
-  --glow-volt: rgba(143, 191, 18, 0.06);
-  --focus: #4E7A00;
+  /* Brand + status. Monochrome chrome: the "accent" is plain black on
+     light, plain white on dark. --volt* aliases stay so older rules keep
+     resolving, but they point at the same neutral. */
+  --accent-brand: #111111;
+  --volt: #111111;
+  --volt-text: #111111;
+  --accent: #111111;
+  --on-accent: #FFFFFF;
+  --on-accent-soft: rgba(255, 255, 255, 0.72);
+  --accent-soft: rgba(17, 17, 17, 0.08);
+  --volt-soft: rgba(17, 17, 17, 0.08);
+  --glow-volt: rgba(17, 17, 17, 0.04);
+  --focus: #111111;
   --good: #1F883D;
   --warn: #9A6700;
   --danger: #CF222E;
@@ -128,9 +128,9 @@
   --on-good-text: #186A30;
   --on-warn-text: #7F5500;
   --on-danger-text: #B51E28;
-  --on-volt-text: #446A00;
-  --bubble-user: rgba(143, 191, 18, 0.13);
-  --bubble-user-line: rgba(143, 191, 18, 0.28);
+  --on-volt-text: #111111;
+  --bubble-user: rgba(17, 17, 17, 0.05);
+  --bubble-user-line: rgba(17, 17, 17, 0.14);
   --composer-bg: #FFFFFF;
 
   /* Depth — light stays soft */
@@ -138,8 +138,8 @@
   --shadow-2: 0 0 4px rgba(0, 0, 0, 0.10), 0 4px 14px rgba(0, 0, 0, 0.14);
   --dropdown-shadow: 0 0 8px rgba(0, 0, 0, 0.16), 0 18px 50px rgba(0, 0, 0, 0.34);
   --modal-shadow: 0 0 8px rgba(0, 0, 0, 0.16), 0 18px 50px rgba(0, 0, 0, 0.34);
-  --logo-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
-  --sidebar-shadow: 10px 0 28px rgba(0, 0, 0, 0.08);
+  --logo-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --sidebar-shadow: none;
 }
 
 /* ======================================================================== */
@@ -151,8 +151,8 @@
 
   /* Surfaces */
   --bg: #0B0C0E;
-  --rail-bg: #08090B;
-  --sidebar-bg: #0E0F12;
+  --rail-bg: #0B0C0E;
+  --sidebar-bg: #101114;
   --panel: #141519;
   --panel-soft: #101115;
   --surface-raised: #1A1C21;
@@ -172,17 +172,17 @@
   --muted: #8A8F98;
   --placeholder: #828790;
 
-  /* Brand + status */
-  --accent-brand: #C6F24E;
-  --volt: #C6F24E;
-  --volt-text: #C6F24E;
-  --accent: #C6F24E;
+  /* Brand + status: monochrome chrome in dark too — white actions on black. */
+  --accent-brand: #FFFFFF;
+  --volt: #FFFFFF;
+  --volt-text: #FFFFFF;
+  --accent: #FFFFFF;
   --on-accent: #0B0C0E;
   --on-accent-soft: rgba(11, 12, 14, 0.72);
-  --accent-soft: rgba(198, 242, 78, 0.12);
-  --volt-soft: rgba(198, 242, 78, 0.12);
-  --glow-volt: rgba(198, 242, 78, 0.06);
-  --focus: #C6F24E;
+  --accent-soft: rgba(255, 255, 255, 0.12);
+  --volt-soft: rgba(255, 255, 255, 0.12);
+  --glow-volt: rgba(255, 255, 255, 0.04);
+  --focus: #FFFFFF;
   --good: #3FB950;
   --warn: #D29922;
   --danger: #F85149;
@@ -199,9 +199,9 @@
   --on-good-text: #3FB950;
   --on-warn-text: #D29922;
   --on-danger-text: #F9665F;
-  --on-volt-text: #C6F24E;
-  --bubble-user: rgba(198, 242, 78, 0.10);
-  --bubble-user-line: rgba(198, 242, 78, 0.20);
+  --on-volt-text: #FFFFFF;
+  --bubble-user: rgba(255, 255, 255, 0.07);
+  --bubble-user-line: rgba(255, 255, 255, 0.16);
   --composer-bg: #141519;
 
   /* Depth — dark needs deeper blacks to read as depth at all */
@@ -209,8 +209,8 @@
   --shadow-2: 0 0 4px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.55);
   --dropdown-shadow: 0 0 8px rgba(0, 0, 0, 0.55), 0 18px 50px rgba(0, 0, 0, 0.65);
   --modal-shadow: 0 0 8px rgba(0, 0, 0, 0.50), 0 24px 60px rgba(0, 0, 0, 0.70);
-  --logo-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
-  --sidebar-shadow: 10px 0 28px rgba(0, 0, 0, 0.45);
+  --logo-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --sidebar-shadow: none;
 }
 
 /* Shared: space, radius, motion, layout, type. Theme-independent, so they
@@ -269,7 +269,7 @@ body {
   font-size: 14px;
   line-height: 1.55;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -358,20 +358,21 @@ h3 { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-h
 .dot-bad { background: var(--danger); }
 
 /* ======================================================================== */
-/* Navigation rail                                                          */
+/* Top bar (was a left rail — now one horizontal bar, one sidebar)         */
 /* ======================================================================== */
 
 #tabbar {
-  flex: 0 0 var(--rail-width);
-  width: var(--rail-width);
-  height: 100%;
+  flex: 0 0 52px;
+  width: 100%;
+  height: 52px;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  padding: 8px 0 10px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
   background: var(--rail-bg);
-  border-right: 1px solid var(--line);
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
   position: relative;
   z-index: 30;
 }
@@ -379,90 +380,114 @@ h3 { font-family: var(--font-display); font-size: 17px; font-weight: 700; line-h
 .brand {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 4px 0 8px;
+  gap: 8px;
+  padding: 0;
+}
+.brand-name {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .logo {
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   flex: none;
-  border-radius: 12px;
+  border-radius: 8px;
   background: url('logo.png') center / contain no-repeat;
 }
 
 #tabs {
   flex: 1;
-  min-height: 0;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px 8px;
+  flex-direction: row;
+  gap: 2px;
+  padding: 0;
+  overflow-x: auto;
 }
 
 .tab {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  height: 60px;
+  gap: 6px;
+  height: 36px;
   margin: 0;
-  padding: 8px 4px;
+  padding: 0 12px;
   border-radius: var(--radius);
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-align: center;
+  white-space: nowrap;
   transition: background var(--dur-2) var(--ease-std), color var(--dur-2) var(--ease-std);
 }
-.tab .icon { width: 20px; height: 20px; margin: 0; }
-.tab-label { font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: 0.01em; }
+.tab .icon { width: 16px; height: 16px; margin: 0; }
+.tab-label { font-size: 13px; font-weight: 600; line-height: 1.2; letter-spacing: 0; }
 .tab:hover { background: var(--hover-bg); color: var(--text); }
 .tab.active {
   background: var(--accent-soft);
   color: var(--text);
 }
-/* Leading-edge inset bar: position, not colour alone, marks the tab. */
+/* Bottom-edge bar: position, not colour alone, marks the tab. */
 .tab.active::after {
   content: "";
   position: absolute;
-  left: -8px;
-  top: 14px;
-  bottom: 14px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
+  left: 12px;
+  right: 12px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
   background: var(--accent-brand);
 }
 
 .rail-foot {
-  margin-top: auto;
+  margin-top: 0;
+  margin-left: auto;
   display: flex;
-  justify-content: center;
-  padding: 8px 8px 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
 }
+
+/* Theme toggle in the top bar: quiet button with a short label. */
+.theme-toggle {
+  width: auto;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.theme-toggle .icon { width: 16px; height: 16px; }
+.theme-toggle-label { font-size: 12.5px; font-weight: 600; }
 
 .help-chip {
   flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 60px;
-  min-height: 52px;
-  padding: 8px 4px;
+  gap: 6px;
+  width: auto;
+  min-height: 30px;
+  padding: 0 10px;
   border-radius: var(--radius);
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 600;
   text-align: center;
   transition: background var(--dur-2) var(--ease-std), color var(--dur-2) var(--ease-std);
 }
-.help-chip .icon { width: 20px; height: 20px; }
+.help-chip .icon { width: 16px; height: 16px; }
 .help-chip:hover { background: var(--hover-bg); color: var(--text); }
 
 /* ======================================================================== */
@@ -1068,20 +1093,8 @@ main {
   animation: blink 1s steps(1) infinite;
 }
 
-/* Signature moment: one faint volt trail on send. */
-.msg.user.streak { position: relative; }
-.msg.user.streak::after {
-  content: "";
-  position: absolute;
-  right: -14px;
-  bottom: 8px;
-  width: 12px;
-  height: 2px;
-  border-radius: 1px;
-  background: linear-gradient(90deg, transparent, var(--volt));
-  animation: streak 0.4s both;
-  pointer-events: none;
-}
+/* Sent messages carry no decoration — plain bubble, no trail. */
+.msg.user.streak::after { display: none; }
 @keyframes streak {
   0%   { opacity: 0; transform: translateX(6px); animation-timing-function: var(--ease-out); }
   30%  { opacity: 0.85; animation-timing-function: var(--ease-in); }
@@ -1221,11 +1234,11 @@ h3.h-md { font-size: 15px; font-weight: 700; line-height: 1.35; }
   text-align: center;
 }
 .empty-state .logo {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  margin-bottom: 18px;
-  box-shadow: var(--shadow-2), 0 14px 44px -10px var(--accent-soft);
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-1);
 }
 #emptyTitle {
   font-family: var(--font-display);
@@ -1277,8 +1290,8 @@ h3.h-md { font-size: 15px; font-weight: 700; line-height: 1.35; }
   color: var(--muted);
   transition: color var(--dur-2) var(--ease-std), transform var(--dur-2) var(--ease-out);
 }
-.chip:hover { background: var(--hover-bg); border-color: var(--accent-brand); transform: translateY(-1px); }
-.chip:hover::after { color: var(--volt-text); transform: translateX(2px); }
+.chip:hover { background: var(--hover-bg); border-color: var(--line-2); }
+.chip:hover::after { color: var(--text-2); }
 
 /* ======================================================================== */
 /* Buttons                                                                  */
@@ -1586,7 +1599,7 @@ input[type=range]:focus-visible { outline: 2px solid var(--focus); outline-offse
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.pcard-kind.local { background: var(--good); color: var(--on-good); }
+.pcard-kind.local { background: var(--panel-soft); color: var(--text-2); border: 1px solid var(--line); }
 .pcard p { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.5; }
 .pcard input[type=password], .pcard input[type=text] { margin: 0; }
 .pcard-foot {
@@ -2364,9 +2377,7 @@ input[type=range]:focus-visible { outline: 2px solid var(--focus); outline-offse
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background:
-    radial-gradient(1100px 620px at 50% -5%, var(--glow-volt), transparent 62%),
-    var(--bg);
+  background: var(--bg);
 }
 #intro.hidden { display: none !important; }
 .intro-card {
@@ -2500,10 +2511,11 @@ input[type=range]:focus-visible { outline: 2px solid var(--focus); outline-offse
 }
 
 @media (max-width: 860px) {
-  #tabbar { flex-basis: 64px; width: 64px; }
+  #tabbar { gap: 6px; padding: 0 8px; }
+  .brand-name { display: none; }
+  .tab { padding: 0 8px; }
   .tab-label { display: none; }
-  .tab { height: 48px; }
-  .help-chip { width: 48px; min-height: 44px; }
+  .theme-toggle-label { display: none; }
   #sidebar, #botSidebar { width: 240px; min-width: 240px; }
 }
 

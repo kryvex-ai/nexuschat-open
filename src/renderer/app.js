@@ -63,6 +63,7 @@ async function boot() {
   bindHelp();
   bindComposer();
   bindModelPicker();
+  bindThemeToggle();
   bindChatEvents();
   bindConversationSearch();
   bindMarkdownCopy();
@@ -1063,6 +1064,7 @@ function renderSettings() {
   $('#tempVal').textContent = String(state.settings.temperature ?? 0.7);
   $('#maxTokens').value = state.settings.maxTokens || '';
   $('#themeSelect').value = state.settings.theme || 'dark';
+  syncThemeToggle();
   $('#aboutLine').textContent = state.brand.APP_NAME + ' v' + state.version + ' — free and open source, running entirely on this PC.';
   const dp = $('#dataPathLine');
   if (dp) dp.textContent = appInfo && appInfo.dataDir ? 'Data folder: ' + appInfo.dataDir : '';
@@ -1107,6 +1109,7 @@ function bindSettings() {
   $('#themeSelect').addEventListener('change', async e => {
     await saveSetting({ theme: e.target.value });
     applyTheme(e.target.value);
+    syncThemeToggle();
   });
   const resetBtn = $('#resetSettingsBtn');
   if (resetBtn) resetBtn.addEventListener('click', async () => {
@@ -3318,6 +3321,46 @@ function applyTheme(theme) {
   // Unknown or missing values fall back to dark — the shipped default and what
   // the theme dropdown shows — so the UI can never disagree with the setting.
   document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+}
+
+/* The top-bar toggle mirrors Settings → Appearance: same setting, one click.
+ * The dropdown stays the source of truth for tests and screenshots; this
+ * just flips it and keeps both controls saying the same thing. */
+function currentTheme() {
+  const doc = document.documentElement;
+  const theme = doc && doc.dataset ? doc.dataset.theme : null;
+  return theme === 'light' ? 'light' : 'dark';
+}
+
+function syncThemeToggle() {
+  const btn = $('#themeToggleBtn');
+  if (!btn) return;
+  const theme = currentTheme();
+  const next = theme === 'light' ? 'dark' : 'light';
+  const name = next === 'light' ? 'light' : 'dark';
+  btn.title = 'Switch to ' + name + ' theme';
+  if (btn.setAttribute) btn.setAttribute('aria-label', 'Switch to ' + name + ' theme');
+  const label = $('#themeToggleLabel');
+  if (label) label.textContent = theme === 'light' ? 'Light' : 'Dark';
+}
+
+async function toggleTheme() {
+  const next = currentTheme() === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  syncThemeToggle();
+  const sel = $('#themeSelect');
+  if (sel) sel.value = next;
+  await saveSetting({ theme: next });
+  // saveSetting replaces state.settings wholesale — repaint from what stuck.
+  applyTheme(state.settings.theme);
+  syncThemeToggle();
+}
+
+function bindThemeToggle() {
+  const btn = $('#themeToggleBtn');
+  if (!btn) return;
+  btn.addEventListener('click', toggleTheme);
+  syncThemeToggle();
 }
 
 const MAX_TOASTS = 4;
