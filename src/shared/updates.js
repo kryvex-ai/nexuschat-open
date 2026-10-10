@@ -131,6 +131,24 @@ function matchesChecksum(actualHex, expectedHex) {
   return diff === 0;
 }
 
+/**
+ * How long GitHub asks us to wait before checking again, in milliseconds.
+ * getHeader(name) reads one response header. Returns null when nothing says
+ * to wait — callers then use their own wording instead of a time.
+ */
+function rateLimitWaitMs(getHeader) {
+  const get = typeof getHeader === 'function' ? getHeader : () => null;
+  const num = (v) => {
+    const n = Number(String(v == null ? '' : v).trim());
+    return Number.isFinite(n) ? n : null;
+  };
+  const retryAfter = num(get('retry-after'));
+  if (retryAfter !== null && retryAfter > 0) return retryAfter * 1000;
+  const reset = num(get('x-ratelimit-reset'));
+  if (reset !== null && reset > 0) return Math.max(0, reset * 1000 - Date.now());
+  return null;
+}
+
 module.exports = {
   RELEASES_API,
   RELEASES_PAGE,
@@ -139,6 +157,7 @@ module.exports = {
   parseTag,
   versionToString,
   compareVersions,
+  rateLimitWaitMs,
   isOfficialUrl,
   isOfficialDownloadHost,
   pickAsset,

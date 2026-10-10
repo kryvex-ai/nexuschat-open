@@ -56,11 +56,16 @@ test('local find_paths sees folders, not just file contents', async () => {
   seed(root);
   const dirs = await fsTools.run('find_paths', { query: 'comp' }, { root });
   assert.ok(dirs.includes('components'), 'the folder shows up:\n' + dirs);
+  assert.ok(/Directories \(1\):/.test(dirs), 'its own section:\n' + dirs);
   assert.ok(/dir\s+src\/components/.test(dirs), 'typed as a dir:\n' + dirs);
+  assert.ok(!dirs.includes('Files ('), 'no files section without files:\n' + dirs);
+  const logoFiles = await fsTools.run('find_paths', { query: 'logo' }, { root });
+  assert.ok(logoFiles.includes('Files (1):') && logoFiles.includes('assets/logo.png'), 'files get theirs:\n' + logoFiles);
+  assert.ok(!logoFiles.includes('Directories ('), 'no dirs section without dirs:\n' + logoFiles);
   const files = await fsTools.run('find_paths', { query: 'button' }, { root });
   assert.ok(files.includes('Button.jsx'), 'case-insensitive file match:\n' + files);
   const nodirs = await fsTools.run('find_paths', { query: 'src', include_dirs: false }, { root });
-  assert.ok(!nodirs.split('\n').some(l => l.startsWith('dir')), 'dirs excluded:\n' + nodirs);
+  assert.ok(!nodirs.includes('Directories ('), 'dirs excluded:\n' + nodirs);
   const scoped = await fsTools.run('find_paths', { query: 'button', path: 'assets' }, { root });
   assert.match(scoped, /No paths matching/, 'scoped away:\n' + scoped);
   const skipped = await fsTools.run('find_paths', { query: 'dep' }, { root });
@@ -88,8 +93,8 @@ test('remote find_paths asks find for names, quoted and literal', async () => {
   const out = await remote.run('find_paths', { query: 'doc' }, ctx);
   assert.equal(calls.length, 2, 'dirs and files searched separately');
   assert.ok(calls.every(c => c.includes('-iname') && c.includes('/home/me/app')), 'name match under the base:\n' + calls.join('\n'));
-  assert.ok(out.includes('dir') && out.includes('docs'), 'dirs first:\n' + out);
-  assert.ok(out.indexOf('dir') < out.indexOf('guide.txt'), 'dirs before files');
+  assert.ok(out.includes('Directories (1):') && out.includes('Files (1):'), 'both sections:\n' + out);
+  assert.ok(out.indexOf('Directories') < out.indexOf('Files'), 'dirs before files');
 });
 
 test('remote find_paths keeps glob characters in the query literal', async () => {

@@ -267,10 +267,12 @@ const HANDLERS = {
     if (!stat.isDirectory()) fail(`${start.rel} is a file, not a directory.`);
     const max = Math.min(500, Math.max(1, Math.floor(Number(args.max_results) || 100)));
     const includeDirs = args.include_dirs !== false;
-    const hits = [];
+    const dirHits = [];
+    const fileHits = [];
+    const total = () => dirHits.length + fileHits.length;
     let seen = 0;
     const stack = [{ abs: start.abs, rel: start.rel, depth: 0 }];
-    while (stack.length && hits.length < max) {
+    while (stack.length && total() < max) {
       const { abs, rel, depth } = stack.pop();
       let entries;
       try {
@@ -284,15 +286,18 @@ const HANDLERS = {
         if (e.isDirectory() && SKIP_DIRS.has(e.name)) continue;
         const childRel = rel ? rel + '/' + e.name : e.name;
         const isDir = e.isDirectory();
-        if (e.name.toLowerCase().includes(needle) && (isDir ? includeDirs : true)) {
-          hits.push(`${isDir ? 'dir ' : 'file'}  ${childRel}`);
-          if (hits.length >= max) break;
+        if (e.name.toLowerCase().includes(needle) && total() < max) {
+          if (isDir) { if (includeDirs) dirHits.push(childRel); }
+          else fileHits.push(childRel);
         }
         if (isDir && depth < 8) stack.push({ abs: path.join(abs, e.name), rel: childRel, depth: depth + 1 });
       }
     }
-    if (!hits.length) return `No paths matching “${query}”${start.rel ? ' under ' + start.rel : ''}.`;
-    return `${hits.length} path(s) matching “${query}”:\n` + hits.join('\n');
+    if (!total()) return `No paths matching “${query}”${start.rel ? ' under ' + start.rel : ''}.`;
+    const out = [`${total()} path(s) matching “${query}”:`];
+    if (dirHits.length) out.push(`Directories (${dirHits.length}):`, ...dirHits.map(r => '  dir  ' + r));
+    if (fileHits.length) out.push(`Files (${fileHits.length}):`, ...fileHits.map(r => '  file  ' + r));
+    return out.join('\n');
   },
 
   async file_info(args, { root }) {

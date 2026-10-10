@@ -3332,7 +3332,12 @@ async function checkForUpdates(atLaunch) {
   updateInfo = info.updateAvailable ? info : null;
   paintUpdatePill();
   if (atLaunch) { maybePromptUpdate(); return; }
-  if (!info.checked) toast('Could not reach GitHub to check for updates.', 'warn');
+  if (!info.checked) {
+    if (info.reason === 'rate-limited') toast('GitHub is rate-limiting update checks — try again in a while.', 'warn');
+    else if (info.reason === 'no-releases') toast('No updates are published on GitHub right now.', 'warn');
+    else if (info.reason === 'http') toast('GitHub answered with an error — try again later.', 'warn');
+    else toast('Could not reach GitHub to check for updates.', 'warn');
+  }
   else if (!info.updateAvailable) toast('You are on the latest version (v' + info.current + ').', 'ok');
   // An update found by a manual check paints itself on the pill.
 }

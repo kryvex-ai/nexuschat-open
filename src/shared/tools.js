@@ -108,7 +108,7 @@ const TOOLS = [
       include_dirs: 'boolean? — list matching directories too (default true)',
       max_results: 'number? — stop after this many hits (default 100)'
     },
-    returns: 'One match per line as type and path.'
+    returns: 'Matching directories, then files, one per line with its type.'
   },
   {
     name: 'file_info',

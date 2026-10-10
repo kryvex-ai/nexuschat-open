@@ -43,11 +43,31 @@ async function safeFetch(url, opts = {}) {
 }
 
 async function getJson(url) {
-  const res = await safeFetch(url, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'NexusChat-Open' },
-    signal: AbortSignal.timeout(API_TIMEOUT_MS)
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  let res;
+  try {
+    res = await safeFetch(url, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'NexusChat-Open' },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS)
+    });
+  } catch {
+    // Nothing answered: offline, DNS, TLS, or the 6s timeout.
+    throw Object.assign(new Error('offline'), { code: 'offline' });
+  }
+  if (res.status === 403 || res.status === 429) {
+    const err = new Error('rate-limited');
+    err.code = 'rate-limited';
+    err.retryAfterMs = updates.rateLimitWaitMs((n) => res.headers.get(n));
+    throw err;
+  }
+  // No stable release published at all (e.g. only betas exist, or the
+  // releases were deleted): not a network problem, say so downstream.
+  if (res.status === 404) throw Object.assign(new Error('no-releases'), { code: 'no-releases' });
+  if (!res.ok) {
+    const err = new Error('HTTP ' + res.status);
+    err.code = 'http';
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -59,18 +79,28 @@ async function getText(url) {
 
 /**
  * Ask the release feed. Resolves with a decision object and never rejects —
- * offline, rate-limited and malformed responses all come back as
- * `updateAvailable: false`, because a failed check must not disturb the UI.
+ * every failure comes back as `updateAvailable: false` with a `reason` the UI
+ * can report honestly (`offline`, `rate-limited`, `no-releases`, `http`),
+ * because a failed check must neither disturb the UI nor lie about the cause.
  */
 async function checkForUpdate() {
   const current = app.getVersion();
   // Running from source: there is no install to replace, so stay offline.
   if (!app.isPackaged) return { checked: false, skipped: true, updateAvailable: false, current };
-  try {
-    const payload = await getJson(updates.RELEASES_API);
-    return { checked: true, ...updates.selectUpdate(payload, current) };
-  } catch {
-    return { checked: false, updateAvailable: false, current, offline: true };
+  // One retry on transport failure only: a flaky first packet should not read
+  // as unreachable. HTTP answers (403/404/500) are final — retrying a rate
+  // limit would only extend it.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const payload = await getJson(updates.RELEASES_API);
+      return { checked: true, ...updates.selectUpdate(payload, current) };
+    } catch (e) {
+      if (e && e.code === 'offline' && attempt === 0) continue;
+      const reason = (e && e.code) || 'offline';
+      const out = { checked: false, updateAvailable: false, current, reason, offline: reason === 'offline' };
+      if (e && Number.isFinite(e.retryAfterMs)) out.retryAfterMs = e.retryAfterMs;
+      return out;
+    }
   }
 }
 

@@ -36,6 +36,18 @@ function release(over = {}) {
 
 /* ---------------- version parsing and ordering ---------------- */
 
+test('rateLimitWaitMs reads retry-after, reset, or nothing', () => {
+  assert.equal(updates.rateLimitWaitMs(() => '120'), 120000, 'seconds become ms');
+  assert.equal(updates.rateLimitWaitMs(() => null), null, 'no headers, no wait');
+  assert.equal(updates.rateLimitWaitMs(() => 'junk'), null, 'garbage is not a time');
+  assert.equal(updates.rateLimitWaitMs(), null, 'no reader, no wait');
+  const reset = Math.floor(Date.now() / 1000) + 60;
+  const wait = updates.rateLimitWaitMs((n) => n === 'x-ratelimit-reset' ? String(reset) : null);
+  assert.ok(wait > 30000 && wait <= 60000, 'about a minute, got ' + wait);
+  const past = updates.rateLimitWaitMs((n) => n === 'x-ratelimit-reset' ? String(Math.floor(Date.now() / 1000) - 10) : null);
+  assert.equal(past, 0, 'a passed reset means no wait');
+});
+
 test('parseTag accepts stable versions and refuses everything else', () => {
   assert.deepEqual(updates.parseTag('v1.2.3'), { major: 1, minor: 2, patch: 3 });
   assert.deepEqual(updates.parseTag('1.2.3'), { major: 1, minor: 2, patch: 3 });
@@ -164,6 +176,18 @@ test('the IPC channels exist and the preload exposes them', () => {
   const service = read('src/main/updates.js');
   assert.ok(service.includes("redirect: 'follow'") && service.includes('isOfficialDownloadHost'),
     'every fetch validates where a redirect landed before reading it');
+});
+
+test('a failed update check says why, not just "could not reach"', () => {
+  const service = read('src/main/updates.js');
+  assert.ok(service.includes("'rate-limited'"), '403/429 is named');
+  assert.ok(service.includes("'no-releases'"), 'a 404 (nothing stable published) is named');
+  assert.ok(service.includes('attempt === 0'), 'transport failures retry once; HTTP answers are final');
+  const appJs = read('src/renderer/app.js');
+  const body = appJs.match(/async function checkForUpdates\(atLaunch\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(body, 'checkForUpdates missing');
+  assert.ok(body[0].includes('rate-limited') && body[0].includes('no-releases'), 'the pill reports the reason');
+  assert.ok(body[0].includes('Could not reach GitHub'), 'the offline fallback survives');
 });
 
 test('the renderer owns the pill, the modal and a dismiss that persists', () => {

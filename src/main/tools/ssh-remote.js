@@ -321,19 +321,15 @@ const READ_HANDLERS = {
     }
     const clean = (s) => String(s || '').split('\n').map(x => x.trim()).filter(Boolean)
       .map(x => x.replace(/^\.\//, ''));
-    const rows = [];
-    if (dirs) {
-      for (const d of clean(dirs.stdout)) {
-        rows.push('dir   ' + d);
-        if (rows.length >= max) break;
-      }
-    }
-    for (const f of clean(files.stdout)) {
-      rows.push('file  ' + f);
-      if (rows.length >= max) break;
-    }
-    if (!rows.length) return 'No paths matching “' + query.slice(0, 120) + '”.';
-    return rows.length + ' path(s) matching “' + query.slice(0, 120) + '”:\n' + clipOut(rows.join('\n')).text;
+    const dirHits = includeDirs ? clean(dirs && dirs.stdout) : [];
+    const fileHits = clean(files.stdout);
+    if (!dirHits.length && !fileHits.length) return 'No paths matching “' + query.slice(0, 120) + '”.';
+    const shownDirs = dirHits.slice(0, max);
+    const shownFiles = fileHits.slice(0, Math.max(0, max - shownDirs.length));
+    const out = [(shownDirs.length + shownFiles.length) + ' path(s) matching “' + query.slice(0, 120) + '”:'];
+    if (shownDirs.length) out.push('Directories (' + shownDirs.length + '):', ...shownDirs.map(d => '  dir   ' + d));
+    if (shownFiles.length) out.push('Files (' + shownFiles.length + '):', ...shownFiles.map(f => '  file  ' + f));
+    return clipOut(out.join('\n')).text;
   },
 
   async file_info(args, ctx) {
