@@ -98,6 +98,19 @@ const TOOLS = [
     returns: 'One match per line as path:line: text.'
   },
   {
+    name: 'find_paths',
+    risk: RISK.READ,
+    group: 'search',
+    summary: 'Find files and directories by name. Use it to locate something before reading or editing it.',
+    args: {
+      query: 'string — file or folder name to look for (case-insensitive substring)',
+      path: 'string? — directory to search under (default: workspace root)',
+      include_dirs: 'boolean? — list matching directories too (default true)',
+      max_results: 'number? — stop after this many hits (default 100)'
+    },
+    returns: 'One match per line as type and path.'
+  },
+  {
     name: 'file_info',
     risk: RISK.READ,
     group: 'files',
@@ -373,6 +386,7 @@ function callSummary(tool, args = {}) {
     case 'list_dir': return `List ${a.path || 'the workspace'}${a.recursive ? ' recursively' : ''}`;
     case 'search_files': return `Search for “${a.query}”`;
     case 'grep_files': return `Grep /${a.pattern}/`;
+    case 'find_paths': return `Find paths matching “${a.query}”`;
     case 'file_info': return `Inspect ${a.path}`;
     case 'diff_files': return `Diff ${a.path} against ${a.other_path}`;
     case 'project_info': return 'Describe the project';
@@ -525,9 +539,9 @@ function manual() {
     '- One directive per line. Text outside a directive line is your normal reply.',
     '- Only the tools listed below exist. Never invent a tool name.',
     '- Results come back as tool messages: read them before your next step, and adapt when one failed.',
-    '- Work in parallel: put every independent call in the same reply — reads and searches in one block run together instead of one round-trip each. Only split calls across replies when one needs the result of another.',
+    '- Work in parallel with no per-reply limit: put every independent call in the same reply — reads and searches run together instead of one round-trip each. Run as many as the task needs; only split across replies when one call needs the result of another.',
     '- Never re-read a file you just wrote, edited, or created — the result already confirms it. Re-read only after something else changed it (a command run, a git operation).',
-    '- Read cheaply: pass start_line/end_line for large files, and search (search_files/grep_files) instead of opening every file in a folder.',
+    '- Read cheaply: pass start_line/end_line for large files, find_paths locates files and folders by name, and search (search_files/grep_files) reads contents instead of opening every file in a folder.',
     '- Use the dedicated file tools instead of run_command for reads and writes — they are capped, show diffs in the approval prompt, and cost fewer rounds.',
     '- Prefer edit_file over write_file — an exact snippet beats rewriting a whole file.',
     '- Look before you leap: read a file before editing it, and run the project tests or build when they exist.',

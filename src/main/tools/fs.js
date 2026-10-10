@@ -257,6 +257,44 @@ const HANDLERS = {
     return `${hits.length} match(es) for /${source}/ across ${files} file(s):\n` + hits.join('\n');
   },
 
+  async find_paths(args, { root }) {
+    const query = String(args.query);
+    if (!query.trim()) fail('A search needs a query.');
+    const needle = query.toLowerCase();
+    const start = args.path ? pathIn(root, args.path) : { abs: root, rel: '' };
+    const stat = await fsp.stat(start.abs).catch(() => null);
+    if (!stat) fail(`${start.rel || 'That path'} does not exist.`);
+    if (!stat.isDirectory()) fail(`${start.rel} is a file, not a directory.`);
+    const max = Math.min(500, Math.max(1, Math.floor(Number(args.max_results) || 100)));
+    const includeDirs = args.include_dirs !== false;
+    const hits = [];
+    let seen = 0;
+    const stack = [{ abs: start.abs, rel: start.rel, depth: 0 }];
+    while (stack.length && hits.length < max) {
+      const { abs, rel, depth } = stack.pop();
+      let entries;
+      try {
+        entries = await fsp.readdir(abs, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      entries.sort((a, b) => a.name.localeCompare(b.name));
+      for (const e of entries) {
+        if (++seen > MAX_WALK_ENTRIES) break;
+        if (e.isDirectory() && SKIP_DIRS.has(e.name)) continue;
+        const childRel = rel ? rel + '/' + e.name : e.name;
+        const isDir = e.isDirectory();
+        if (e.name.toLowerCase().includes(needle) && (isDir ? includeDirs : true)) {
+          hits.push(`${isDir ? 'dir ' : 'file'}  ${childRel}`);
+          if (hits.length >= max) break;
+        }
+        if (isDir && depth < 8) stack.push({ abs: path.join(abs, e.name), rel: childRel, depth: depth + 1 });
+      }
+    }
+    if (!hits.length) return `No paths matching “${query}”${start.rel ? ' under ' + start.rel : ''}.`;
+    return `${hits.length} path(s) matching “${query}”:\n` + hits.join('\n');
+  },
+
   async file_info(args, { root }) {
     const r = resolvePath(root, args.path);
     if (!r.ok) return `No: ${args.path} (${r.error})`;

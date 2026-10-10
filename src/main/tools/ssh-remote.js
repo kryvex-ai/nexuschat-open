@@ -47,7 +47,7 @@ const REMOTE_TOOLS = new Set([
   'move_file', 'copy_file', 'delete_file',
   'git_status', 'git_diff', 'git_log', 'git_show', 'git_stage',
   'git_commit', 'git_branch',
-  'run_command'
+  'run_command', 'find_paths'
 ]);
 
 function isRemoteable(name) {
@@ -290,6 +290,50 @@ const READ_HANDLERS = {
     const text = String(r.stdout || '').trim();
     if (!text) return 'No line matches /' + source.slice(0, 120) + '/.';
     return clipOut(text).text;
+  },
+
+  async find_paths(args, ctx) {
+    const query = String(args.query);
+    if (!query.trim()) fail('A search needs a query.');
+    const rel = checkRelDir(args.path);
+    const max = Math.min(500, Math.max(1, Math.floor(Number(args.max_results) || 100)));
+    const includeDirs = args.include_dirs !== false;
+    const { host, base } = remoteOf(ctx);
+    const ssh = sshOf(ctx);
+    // Substring match on the name, case-insensitive; glob metacharacters in
+    // the query are escaped so they stay literal inside -iname.
+    const escaped = query.replace(/([*?\[\\])/g, '\\$1');
+    const at = rel ? Q(rel) : '.';
+    const skip = '-not -path "*/node_modules/*" -not -path "*/.git/*"';
+    const dirScript = cdPart(base) + 'find ' + at + ' -maxdepth 8 -type d -iname ' + Q('*' + escaped + '*')
+      + ' ' + skip + ' 2>/dev/null | head -n ' + max;
+    const fileScript = cdPart(base) + 'find ' + at + ' -maxdepth 8 -type f -iname ' + Q('*' + escaped + '*')
+      + ' ' + skip + ' 2>/dev/null | head -n ' + max;
+    const jobs = [runScript(host, ssh, fileScript, 30000)];
+    if (includeDirs) jobs.unshift(runScript(host, ssh, dirScript, 30000));
+    const settled = await Promise.all(jobs);
+    const dirs = includeDirs ? settled[0] : null;
+    const files = includeDirs ? settled[1] : settled[0];
+    const emptyDirs = !String((dirs && dirs.stdout) || '').trim();
+    const emptyFiles = !String(files.stdout || '').trim();
+    if (emptyDirs && emptyFiles && ((dirs && dirs.code !== 0) || files.code !== 0)) {
+      fail(remoteError(files.code !== 0 ? files : dirs, 'Remote search failed.'));
+    }
+    const clean = (s) => String(s || '').split('\n').map(x => x.trim()).filter(Boolean)
+      .map(x => x.replace(/^\.\//, ''));
+    const rows = [];
+    if (dirs) {
+      for (const d of clean(dirs.stdout)) {
+        rows.push('dir   ' + d);
+        if (rows.length >= max) break;
+      }
+    }
+    for (const f of clean(files.stdout)) {
+      rows.push('file  ' + f);
+      if (rows.length >= max) break;
+    }
+    if (!rows.length) return 'No paths matching “' + query.slice(0, 120) + '”.';
+    return rows.length + ' path(s) matching “' + query.slice(0, 120) + '”:\n' + clipOut(rows.join('\n')).text;
   },
 
   async file_info(args, ctx) {
