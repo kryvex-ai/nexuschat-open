@@ -13,7 +13,7 @@ const sanitizeError = (e) => {
   return (out instanceof Error || (out && typeof out.message === 'string')) ? String(out.message) : String(out);
 };
 const { BotStore, BotRunner, validateBotInput, buildBotChatMessages, parseBotDirectives, applyBotDirectives, publicBot } = require('./bots');
-const { ToolHost, PermissionGate, DECISION, catalog } = require('./tools');
+const { ToolHost, PermissionGate, DECISION, catalog, parseToolCalls } = require('./tools');
 const { runAgentTurn } = require('./agent');
 const { toolsOffNote } = require('../shared/tools');
 const { realRoot } = require('./tools/paths');
@@ -393,8 +393,11 @@ function initIpc(store) {
           if (isCurrent()) emit('chat:delta', { conversationId: conv.id, delta });
         }
         if (!isCurrent()) return; // superseded by a newer generation — stay silent
+        // Tools are off here, so a directive could never execute — but the
+        // bubble already hides the syntax mid-stream, so the stored text is
+        // stripped the same way instead of flashing it back at the end.
         const message = store.appendMessage(conv.id, {
-          role: 'assistant', content: acc,
+          role: 'assistant', content: parseToolCalls(acc).text,
           meta: { provider: providerId, model: useModel }
         });
         store.updateConversation(conv.id, { providerId, model: useModel });
@@ -404,7 +407,7 @@ function initIpc(store) {
         const aborted = err && (err.name === 'AbortError' || /abort/i.test(String(err.message)));
         if (aborted) {
           const message = acc
-            ? store.appendMessage(conv.id, { role: 'assistant', content: acc, meta: { provider: providerId, model: useModel, partial: true } })
+            ? store.appendMessage(conv.id, { role: 'assistant', content: parseToolCalls(acc).text, meta: { provider: providerId, model: useModel, partial: true } })
             : null;
           emit('chat:done', { conversationId: conv.id, message, aborted: true });
         } else {

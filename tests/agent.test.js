@@ -458,4 +458,7 @@ test('wiring: the agent is exposed end to end, and only through the bridge', () 
   }
   assert.match(app, /tools: toolsOn/, 'the composer sends its tools choice');
   assert.ok(!/auto-?accept|alwaysAllow|skipConfirm/i.test(ipc + app), 'there is no auto-accept switch anywhere');
+  // Directive syntax is display-filtered mid-stream, so the stored text of a
+  // tools-off reply is stripped the same way instead of flashing it back.
+  assert.ok(ipc.includes('parseToolCalls(acc).text'), 'tools-off replies never store directive syntax');
 });

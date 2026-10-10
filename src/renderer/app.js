@@ -578,6 +578,79 @@ function clearStreamBubble() {
   if (streamBubble) { streamBubble.remove(); streamBubble = null; }
 }
 
+/**
+ * Display-only stripping of tool-directive syntax for the streaming bubble.
+ * Executing a tool is the main process's job (it parses there); this only
+ * decides what the bubble may show, so `[[tool …]]` is never on screen
+ * mid-stream: complete shapes are removed, and a trailing in-progress shape
+ * is held back until it resolves. Anything else — including a malformed
+ * fragment, which the stored message keeps visibly — paints as usual, so the
+ * bubble never looks stuck while the reply is still arriving.
+ */
+function stripStreamDirectives(raw) {
+  const s = String(raw == null ? '' : raw);
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const start = s.indexOf('[[tool', i);
+    if (start === -1) { out += s.slice(i); break; }
+    const j = start + 6;
+    const nxt = s[j];
+    if (nxt !== undefined && nxt !== '{' && !/\s/.test(nxt)) {
+      // "[[toolbox …" is prose, not a directive — same rule as the parser.
+      out += s.slice(i, j);
+      i = j;
+      continue;
+    }
+    let k = j;
+    while (k < s.length && /\s/.test(s[k])) k++;
+    if (s[k] !== '{') {
+      // No JSON yet: hold back only a fragment that is still plausibly a
+      // directive being typed; prose keeps painting.
+      if (/^[\s]*$/.test(s.slice(j))) { out += s.slice(i, start); break; }
+      out += s.slice(i, j);
+      i = j;
+      continue;
+    }
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let p = k; p < s.length; p++) {
+      const ch = s[p];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) { end = p; break; }
+      }
+    }
+    if (end === -1) {
+      // JSON still arriving: hold back only a plausible directive
+      // (`[[tool {…`); prose that merely mentions the syntax keeps painting.
+      if (/^\{/.test(s.slice(k))) { out += s.slice(i, start); break; }
+      out += s.slice(i, j);
+      i = j;
+      continue;
+    }
+    let m = end + 1;
+    while (m < s.length && /\s/.test(s[m])) m++;
+    if (s.slice(m, m + 2) !== ']]') { out += s.slice(i, j); i = j; continue; }
+    // Only a directive the main process would execute is hidden — anything
+    // else stays visible here exactly as the stored message keeps it.
+    let parses = false;
+    try {
+      const a = JSON.parse(s.slice(k, end + 1));
+      parses = !!(a && typeof a === 'object' && !Array.isArray(a) && typeof a.name === 'string');
+    } catch { parses = false; }
+    if (!parses) { out += s.slice(i, j); i = j; continue; }
+    out += s.slice(i, start);
+    i = m + 2;
+  }
+  return out;
+}
+
 /* ---------------- markdown ---------------- */
 
 /**
@@ -764,7 +837,7 @@ function onChatDelta(payload) {
   // user switched to mid-stream.
   if (currentConvId && payload.conversationId !== currentConvId) return;
   const bubble = ensureStreamBubble();
-  bubble.textContent = streamedText;
+  bubble.textContent = stripStreamDirectives(streamedText);
   const cursor = document.createElement('span');
   cursor.className = 'cursor';
   bubble.appendChild(cursor);
