@@ -82,7 +82,30 @@ function initIpc(store) {
     return store.getSettings().agent || {};
   }
 
+  function sshHostsNow() {
+    const l = store.getSettings().sshHosts;
+    return Array.isArray(l) ? l : [];
+  }
+
+  /**
+   * The chat's remote destination, resolved against the SAVED host list every
+   * turn — so a host deleted in Settings stops working here immediately.
+   * Returns { host, base } or null for a local chat.
+   */
+  function convRemoteNow(conv) {
+    const id = conv && conv.sshHostId;
+    if (!id) return null;
+    const host = sshHostsNow().find((h) => h && h.id === id);
+    if (!host) return null;
+    const dir = sanitizeRemotePath(conv.sshPath, { allowHome: true });
+    return { host, base: dir === null ? '' : dir };
+  }
+
   function toolHost() {
+    return toolHostFor(null);
+  }
+
+  function toolHostFor(conv) {
     const a = agentSettingsNow();
     gate.askBeforeReads = a.askBeforeReads === true;
     gate.allowSessionGrants = a.allowSessionGrants !== false;
@@ -92,10 +115,8 @@ function initIpc(store) {
       // The one network tool stays off until the user switches it on in
       // Settings; everything else is allowed by class, not individually.
       enabled: (tool) => !(tool.name === 'http_fetch' && a.allowNetwork !== true),
-      sshHosts: () => {
-        const l = store.getSettings().sshHosts;
-        return Array.isArray(l) ? l : [];
-      }
+      sshHosts: () => sshHostsNow(),
+      remote: conv ? convRemoteNow(conv) : null
     });
   }
 
@@ -119,7 +140,13 @@ function initIpc(store) {
   /** Tools are on for a turn when the chat asks for them, or the default is on. */
   function toolsWantedFor(payload, conv) {
     const a = agentSettingsNow();
-    if (!a.enabled || !a.workspace || !realRoot(a.workspace)) return false;
+    if (!a.enabled) return false;
+    // Either side counts: the local workspace, or the chat's SSH connection.
+    // A remote-only chat (no local folder) can still use tools — they run on
+    // the host instead of this PC.
+    const localOk = !!(a.workspace && realRoot(a.workspace));
+    const remoteOk = !!(conv && conv.sshHostId);
+    if (!localOk && !remoteOk) return false;
     if (typeof payload.tools === 'boolean') return payload.tools;
     if (conv && typeof conv.tools === 'boolean') return conv.tools;
     return true;
@@ -317,11 +344,16 @@ function initIpc(store) {
       // this is just the wiring.
       if (toolsOn) {
         try {
+          // Re-read the conversation: the remote destination is per-chat, so
+          // the host for this turn comes from the chat, not global settings.
+          const turnConv = store.getConversation(conv.id) || conv;
+          const remote = convRemoteNow(turnConv);
           await runAgentTurn({
             store,
-            host: toolHost(),
+            host: toolHostFor(turnConv),
             conversationId: conv.id,
             basePrompt: system,
+            remote: remote ? { hostLabel: remote.host.label || remote.host.host, path: remote.base || '' } : null,
             temperature: settings.temperature,
             maxTokens: settings.maxTokens || undefined,
             maxSteps: agentSettingsNow().maxSteps,
@@ -437,22 +469,18 @@ function initIpc(store) {
    * did not already save. Paths and commands are re-validated on this side
    * too — the browser round-trips them, nothing is trusted across the bridge. */
 
-  const sshHostsNow = () => {
-    const list = store.getSettings().sshHosts;
-    return Array.isArray(list) ? list : [];
-  };
-
   function sshHostOrThrow(id) {
     const host = sshHostsNow().find((h) => h && h.id === id);
     if (!host) throw new Error('That SSH host is not in the saved list anymore — pick it again.');
     return host;
   }
 
-  ipcMain.handle('ssh:run', async (_e, { hostId, command } = {}) => {
+  ipcMain.handle('ssh:run', async (_e, { hostId, command, timeoutMs } = {}) => {
     try {
       const cmd = sanitizeCommand(command);
       if (!cmd) throw new Error('Type a command to run on the host.');
-      return { ok: true, ...(await sshExec.sshRun(sshHostOrThrow(hostId), cmd)) };
+      const ms = Math.min(SSH_LIMITS.TOOL_MAX_MS, Math.max(5000, Math.floor(Number(timeoutMs) || SSH_LIMITS.RUN_TIMEOUT_MS)));
+      return { ok: true, ...(await sshExec.sshRun(sshHostOrThrow(hostId), cmd, ms)) };
     } catch (e) {
       return { ok: false, error: sanitizeError(e) };
     }
@@ -504,6 +532,14 @@ function initIpc(store) {
   ipcMain.handle('ssh:forgetKey', async (_e, { hostId } = {}) => {
     try {
       return { ok: true, ...(await sshExec.keygenForget(sshHostOrThrow(hostId))) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
+
+  ipcMain.handle('ssh:prereq', async () => {
+    try {
+      return { ok: true, ...(await sshExec.sshCheckBinary()) };
     } catch (e) {
       return { ok: false, error: sanitizeError(e) };
     }
@@ -709,6 +745,40 @@ function initIpc(store) {
   ipcMain.handle('conversations:get', (_e, { id }) => store.getConversation(id));
   ipcMain.handle('conversations:rename', (_e, { id, title }) => store.updateConversation(id, { title }));
   ipcMain.handle('conversations:delete', (_e, { id }) => ({ ok: store.deleteConversation(id) }));
+
+  /**
+   * Attach a chat to an SSH host + folder (or detach with hostId null).
+   * Verifies by listing the folder first: a stored destination always
+   * resolved once, so tools never start from a folder that is not there.
+   */
+  ipcMain.handle('conversations:setSsh', async (_e, { id, hostId = null, path: p = '' } = {}) => {
+    try {
+      if (!validId(id)) throw new Error('Invalid chat id.');
+      const conv = store.getConversation(id);
+      if (!conv) throw new Error('Chat not found.');
+      if (hostId === null || hostId === '') {
+        store.updateConversation(id, { sshHostId: null, sshPath: '', sshOk: null, sshCheckedAt: null });
+        return { ok: true, detached: true, conversation: store.getConversation(id) };
+      }
+      const host = sshHostOrThrow(String(hostId));
+      const dir = sanitizeRemotePath(p, { allowHome: true });
+      if (dir === null) throw new Error('Remote folder must be an absolute path.');
+      let resolved = dir;
+      try {
+        const listed = await sshExec.sshList(host, dir);
+        if (listed && listed.dir) resolved = listed.dir;
+      } catch (e) {
+        return { ok: false, error: sanitizeError(e) };
+      }
+      store.updateConversation(id, {
+        sshHostId: host.id, sshPath: resolved,
+        sshOk: true, sshCheckedAt: new Date().toISOString()
+      });
+      return { ok: true, dir: resolved, hostId: host.id, conversation: store.getConversation(id) };
+    } catch (e) {
+      return { ok: false, error: sanitizeError(e) };
+    }
+  });
 
   /* ---------------- data ---------------- */
 

@@ -49,6 +49,11 @@
           <span class="status-chip"><span id="chatStatus" class="muted"></span></span>
           <button type="button" class="help-btn" data-help="chat" title="Chat and models" aria-label="Chat and models">?</button>
         </div>
+        <div id="sshDestBar" class="ssh-dest-bar" aria-live="polite">
+          <span id="sshDestDot" class="ssh-dest-dot" aria-hidden="true"></span>
+          <span id="sshDestText" class="ssh-dest-text muted">This PC</span>
+          <button id="sshDestBtn" type="button" class="ghost ssh-dest-btn">Connect</button>
+        </div>
         <div id="messages" tabindex="0" aria-busy="false"></div>
         <div id="chatAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
         <div id="composer">
@@ -225,18 +230,26 @@
             <div class="card panel" id="sec-ssh">
               <div class="panel-head"><h2>SSH</h2><span class="panel-head-side"><span id="sshCount" class="badge">0 hosts</span><button type="button" class="help-btn" data-help="ssh" title="Remote shells through your own ssh" aria-label="Remote shells through your own ssh">?</button></span></div>
               <p class="muted">Run commands and read files on machines you already reach with <code>ssh</code>. Passwords are never stored — use a key or your agent, as you would in a terminal.</p>
-              <div id="sshHostList" class="ssh-host-list"></div>
+              <p class="muted small" id="sshPrereqLine" aria-live="polite"></p>
+              <div id="sshHostList" class="ssh-host-list" role="listbox" aria-label="Saved SSH hosts"></div>
+              <div class="row">
+                <span class="muted small" id="sshFormTitle">New host</span>
+                <span class="muted small" id="sshFormError" role="alert"></span>
+              </div>
               <label for="sshLabel">Saved host</label>
               <div class="row">
                 <input id="sshLabel" type="text" placeholder="Label (e.g. Home server)" class="grow" aria-label="Saved host">
-                <input id="sshHost" type="text" placeholder="host or IP" class="grow" aria-label="Host or IP address">
+                <input id="sshHost" type="text" placeholder="host or IP" class="grow" aria-label="Host or IP address" list="sshHostHints">
+                <datalist id="sshHostHints"></datalist>
               </div>
+              <p class="muted small">The host box also takes user@host:port or ssh://user@host:port pastes.</p>
               <div class="row">
                 <input id="sshUser" type="text" placeholder="user (optional)" class="grow" aria-label="User">
                 <input id="sshPort" type="number" min="1" max="65535" placeholder="port" class="w-sm" aria-label="Port">
                 <input id="sshKey" type="text" placeholder="key file (optional)" class="w-md" aria-label="Key file path">
               </div>
               <div class="row">
+                <button id="sshNewHostBtn" class="ghost">New</button>
                 <button id="sshSaveHostBtn" class="ghost">Save host</button>
                 <button id="sshRemoveHostBtn" class="ghost">Remove</button>
                 <button id="sshTestBtn" class="ghost">Run self-test</button>
@@ -244,28 +257,48 @@
               </div>
               <label for="sshCmd">Command</label>
               <div class="row">
-                <input id="sshCmd" type="text" placeholder="uptime" class="grow" aria-label="Command to run">
+                <input id="sshCmd" type="text" placeholder="uptime" class="grow" aria-label="Command to run" list="sshCmdList" autocomplete="off" spellcheck="false">
+                <datalist id="sshCmdList"></datalist>
+                <select id="sshTimeout" class="w-sm" aria-label="Command timeout">
+                  <option value="15000">15s</option>
+                  <option value="30000" selected>30s</option>
+                  <option value="60000">60s</option>
+                  <option value="120000">120s</option>
+                </select>
                 <button id="sshRunBtn" class="ghost">Run</button>
+              </div>
+              <div class="row">
+                <span id="sshRunStatus" class="muted small" aria-live="polite"></span>
+                <button id="sshCopyOutBtn" class="ghost">Copy output</button>
+                <button id="sshClearOutBtn" class="ghost">Clear</button>
               </div>
               <pre id="sshOut" class="code-out" aria-live="polite"></pre>
               <label for="sshPath">Browse files</label>
               <div class="row">
                 <input id="sshPath" type="text" placeholder="(login home)" class="grow" aria-label="Browse files">
+                <button id="sshHomeBtn" class="ghost">Home</button>
                 <button id="sshUpBtn" class="ghost">Up</button>
                 <button id="sshListBtn" class="ghost">List</button>
               </div>
-              <div id="sshFiles" class="ssh-files hidden"></div>
+              <div id="sshCrumbs" class="ssh-crumbs" aria-label="Current remote path"></div>
+              <div class="row">
+                <input id="sshFilter" type="search" placeholder="Filter files…" class="grow" aria-label="Filter files">
+              </div>
+              <div id="sshFiles" class="ssh-files hidden" role="listbox" aria-label="Remote files"></div>
               <div class="row">
                 <button id="sshPreviewBtn" class="ghost">Preview</button>
                 <button id="sshDownloadBtn" class="ghost">Save to workspace</button>
+                <button id="sshCopyPreviewBtn" class="ghost">Copy preview</button>
                 <span id="sshFileStatus" class="muted small"></span>
               </div>
               <pre id="sshPreview" class="code-out"></pre>
               <div class="row">
                 <span class="muted small">Self-test</span>
                 <span id="sshScore" class="badge">not run</span>
+                <span id="sshLastTest" class="muted small"></span>
                 <button id="sshCopyCfgBtn" class="ghost">Copy Host block</button>
               </div>
+              <p class="muted small" id="sshEffective" aria-live="polite"></p>
               <div id="sshFindings" class="ssh-findings"></div>
               <p class="muted small" id="sshNote"></p>
               <pre id="sshConfig" class="code-out"></pre>
@@ -291,6 +324,25 @@
   </main>
 
   <div id="toasts" aria-live="polite" role="status"></div>
+  <div id="sshDestModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="sshDestModalTitle">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="sshDestModalTitle">Work on a remote folder</h2>
+      </div>
+      <p class="muted">Attach this chat to a saved host. The bar under the chat shows the connection, and tools run there when they are on.</p>
+      <label for="sshDestHost">Saved host</label>
+      <select id="sshDestHost"></select>
+      <label for="sshDestPath">Remote folder</label>
+      <input id="sshDestPath" type="text" placeholder="(login home)" aria-label="Remote folder">
+      <p class="muted small">Empty means the login home. Only hosts saved in Settings → SSH are listed.</p>
+      <p class="muted small" id="sshDestError" role="alert"></p>
+      <div class="row">
+        <button id="sshDestConnectBtn" class="primary">Connect</button>
+        <button id="sshDestDisconnectBtn" class="ghost">Disconnect</button>
+        <button id="sshDestCancelBtn" class="ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
   <div id="toolModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="toolModalTitle">
     <div class="modal tool-modal">
       <div class="modal-head">

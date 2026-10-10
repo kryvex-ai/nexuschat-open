@@ -1,7 +1,7 @@
 {
   "name": "nexuschat-open",
   "productName": "NexusChat Open",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Open-source, local-first AI chat: bring your own provider key — your chats and bots run on your machine.",
   "main": "src/main/main.js",
   "author": "NexusChat Open contributors",

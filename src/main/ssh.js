@@ -23,10 +23,27 @@ const path = require('node:path');
 const {
   SSH_LIMITS, buildSshArgs, remoteListCommand, parseRemoteList, parseListDir,
   remoteReadCommand, sshConfigBlock, knownHostsQuery, auditSsh, parseSshG,
-  isProbablyText, firstLine, listVal, sanitizeCommand
+  isProbablyText, firstLine, listVal, sanitizeCommand, describeSshFailure
 } = require('../shared/ssh');
 
 const NO_SSH = 'OpenSSH (ssh) was not found on this machine. Install it first — on Windows: Settings → Apps → Optional features → OpenSSH Client.';
+
+// `ssh -V` writes to stderr and exits 0; the answer is cached per process so
+// the Settings panel can explain a missing binary instead of timing out.
+let binaryCache = null;
+async function sshCheckBinary() {
+  if (binaryCache) return binaryCache;
+  try {
+    const r = await spawnBounded('ssh', ['-V'], { timeoutMs: 5000, maxBytes: 8192 });
+    const text = (r.stderr.toString('utf8') + r.stdout.toString('utf8')).trim();
+    binaryCache = /OpenSSH/i.test(text)
+      ? { ok: true, version: firstLine(text, 120) }
+      : { ok: true, version: firstLine(text, 120) || 'ssh answered' };
+  } catch (e) {
+    binaryCache = { ok: false, error: String((e && e.message) || e) };
+  }
+  return binaryCache;
+}
 
 function expandHome(p) {
   if (!p) return '';
@@ -105,11 +122,16 @@ const errText = (r) => firstLine(r.stderr.length ? r.stderr.toString('utf8') : r
 /** Run a command on the host. Explicit user action: pins the key on first use. */
 async function sshRun(host, command, timeoutMs = SSH_LIMITS.RUN_TIMEOUT_MS) {
   const r = await spawnBounded('ssh', buildSshArgs(prep(host), { acceptNew: true, command }), { timeoutMs });
+  const stderr = r.stderr.toString('utf8').slice(0, SSH_LIMITS.OUTPUT_MAX);
+  const { hint } = (r.code !== 0 || r.timedOut)
+    ? describeSshFailure(stderr || r.stdout.toString('utf8'), { code: r.code, timedOut: r.timedOut })
+    : { hint: '' };
   return {
     code: r.code, timedOut: r.timedOut, ms: r.ms,
     stdout: r.stdout.toString('utf8').slice(0, SSH_LIMITS.OUTPUT_MAX),
-    stderr: r.stderr.toString('utf8').slice(0, SSH_LIMITS.OUTPUT_MAX),
-    truncated: r.truncated
+    stderr,
+    truncated: r.truncated,
+    hint
   };
 }
 
@@ -120,9 +142,11 @@ async function sshRun(host, command, timeoutMs = SSH_LIMITS.RUN_TIMEOUT_MS) {
 async function sshProbe(host) {
   try {
     const r = await spawnBounded('ssh', buildSshArgs(prep(host), { command: 'true', connectTimeoutS: 6 }), { timeoutMs: SSH_LIMITS.PROBE_TIMEOUT_MS });
-    if (r.timedOut) return { ok: false, ms: r.ms, error: 'No answer within ' + Math.round(SSH_LIMITS.PROBE_TIMEOUT_MS / 1000) + 's.' };
+    if (r.timedOut) return { ok: false, ms: r.ms, error: 'No answer within ' + Math.round(SSH_LIMITS.PROBE_TIMEOUT_MS / 1000) + 's.', hint: 'The host did not answer in time. Check the address and port.' };
     if (r.code === 0) return { ok: true, ms: r.ms };
-    return { ok: false, ms: r.ms, error: errText(r) || 'Connection failed (exit ' + r.code + ').' };
+    const err = errText(r) || 'Connection failed (exit ' + r.code + ').';
+    const { hint } = describeSshFailure(r.stderr.toString('utf8') || r.stdout.toString('utf8'), { code: r.code });
+    return { ok: false, ms: r.ms, error: err, hint };
   } catch (e) {
     return { ok: false, ms: 0, error: String((e && e.message) || e) };
   }
@@ -154,7 +178,7 @@ async function keygenForget(host) {
 function statKey(host) {
   const candidates = host.keyFile
     ? [expandHome(host.keyFile)]
-    : ['id_ed25519', 'id_ecdsa', 'id_rsa'].map(n => path.join(os.homedir(), '.ssh', n));
+    : ['id_ed25519', 'id_ed25519_sk', 'id_ecdsa', 'id_ecdsa_sk', 'id_rsa'].map(n => path.join(os.homedir(), '.ssh', n));
   for (const p of candidates) {
     try {
       const st = fs.statSync(p);
@@ -167,7 +191,13 @@ function statKey(host) {
 async function sshList(host, remotePath) {
   const r = await spawnBounded('ssh', buildSshArgs(prep(host), { acceptNew: true, command: remoteListCommand(remotePath) }), { timeoutMs: SSH_LIMITS.LIST_TIMEOUT_MS });
   const text = r.stdout.toString('utf8');
-  if (r.code !== 0 && !text) throw new Error(errText(r) || 'Listing failed (exit ' + r.code + ').');
+  if (r.code !== 0 && !text) {
+    const err = errText(r) || 'Listing failed (exit ' + r.code + ').';
+    const { hint } = describeSshFailure(r.stderr.toString('utf8'), { code: r.code, timedOut: r.timedOut });
+    const e = new Error(hint ? err + ' ' + hint : err);
+    e.hint = hint;
+    throw e;
+  }
   const entries = parseRemoteList(text).slice(0, 2000);
   return { dir: parseListDir(text) || remotePath || '', entries, truncated: r.truncated };
 }
@@ -175,7 +205,13 @@ async function sshList(host, remotePath) {
 async function sshRead(host, remotePath, maxBytes = SSH_LIMITS.READ_MAX) {
   const r = await spawnBounded('ssh', buildSshArgs(prep(host), { acceptNew: true, command: remoteReadCommand(remotePath, maxBytes) }), { timeoutMs: SSH_LIMITS.READ_TIMEOUT_MS });
   const buf = r.stdout;
-  if (r.code !== 0 && !buf.length) throw new Error(errText(r) || 'Read failed (exit ' + r.code + ').');
+  if (r.code !== 0 && !buf.length) {
+    const err = errText(r) || 'Read failed (exit ' + r.code + ').';
+    const { hint } = describeSshFailure(r.stderr.toString('utf8'), { code: r.code, timedOut: r.timedOut });
+    const e = new Error(hint ? err + ' ' + hint : err);
+    e.hint = hint;
+    throw e;
+  }
   const truncated = buf.length > maxBytes;
   const body = truncated ? buf.subarray(0, maxBytes) : buf;
   return {
@@ -189,9 +225,11 @@ async function sshRead(host, remotePath, maxBytes = SSH_LIMITS.READ_MAX) {
 /**
  * Stream a remote file into the workspace. Unique name, hard byte cap, and
  * a partial file is unlinked — a cancelled or oversized save never leaves
- * debris for the agent to trip over.
+ * debris for the agent to trip over. Bounded by SAVE_TIMEOUT_MS: a stalled
+ * network kills the child instead of hanging the panel forever (the previous
+ * version spawned with no timeout at all).
  */
-async function sshSave(host, remotePath, destPath, maxBytes = SSH_LIMITS.SAVE_MAX) {
+async function sshSave(host, remotePath, destPath, maxBytes = SSH_LIMITS.SAVE_MAX, timeoutMs = SSH_LIMITS.SAVE_TIMEOUT_MS) {
   const args = buildSshArgs(prep(host), { acceptNew: true, command: remoteReadCommand(remotePath, maxBytes) });
   return new Promise((resolve, reject) => {
     let child;
@@ -201,14 +239,28 @@ async function sshSave(host, remotePath, destPath, maxBytes = SSH_LIMITS.SAVE_MA
       reject(new Error(String((e && e.message) || e)));
       return;
     }
+    let settled = false;
     const out = fs.createWriteStream(destPath, { flags: 'wx' });
     let bytes = 0;
     let failed = null;
+    let timedOut = false;
     const cleanup = (msg) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardKill);
       try { out.destroy(); } catch { /* already closed */ }
       try { fs.unlinkSync(destPath); } catch { /* partial already gone */ }
       reject(new Error(msg));
     };
+    // A stalled download used to hang forever — this is the same bounded
+    // pattern spawnBounded uses: SIGTERM first, SIGKILL shortly after.
+    const hardKill = setTimeout(() => {
+      timedOut = true;
+      failed = 'The download timed out after ' + Math.round(timeoutMs / 1000) + 's — the host stopped answering.';
+      try { child.kill('SIGTERM'); } catch { /* gone */ }
+      setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 3000).unref();
+    }, timeoutMs);
+    if (hardKill.unref) hardKill.unref();
     out.on('error', (e) => { failed = 'Cannot write the workspace file: ' + String(e && e.message || e); });
     child.stdout.on('data', (c) => {
       bytes += c.length;
@@ -219,12 +271,29 @@ async function sshSave(host, remotePath, destPath, maxBytes = SSH_LIMITS.SAVE_MA
     });
     let errBuf = '';
     child.stderr.on('data', (c) => { if (errBuf.length < 8192) errBuf += c.toString('utf8'); });
-    child.on('error', (e) => cleanup(String((e && e.message) || e)));
-    child.on('close', () => {
+    child.stdout.on('error', (e) => cleanup(String((e && e.message) || e)));
+    out.on('error', () => { try { child.kill('SIGTERM'); } catch { /* gone */ } });
+    child.on('error', (e) => cleanup(e && e.code === 'ENOENT' ? NO_SSH : String((e && e.message) || e)));
+    child.on('close', (code) => {
+      if (settled) return;
+      // Ended by our own timeout: the message is already in `failed`.
       out.end(() => {
-        if (failed) return cleanup(failed);
-        if (bytes === 0) return cleanup(firstLine(errBuf) || 'The remote file could not be read.');
-        resolve({ bytes });
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardKill);
+        if (failed) {
+          try { fs.unlinkSync(destPath); } catch { /* partial already gone */ }
+          reject(new Error(failed));
+          return;
+        }
+        if (bytes === 0) {
+          try { fs.unlinkSync(destPath); } catch { /* nothing written */ }
+          const err = firstLine(errBuf) || 'The remote file could not be read.';
+          const { hint } = describeSshFailure(errBuf, { code });
+          reject(new Error(hint ? err + ' ' + hint : err));
+          return;
+        }
+        resolve({ bytes, timedOut });
       });
     });
     child.stdout.pipe(out, { end: false });
@@ -280,8 +349,12 @@ async function sshExecTool(args, ctx) {
   const r = await sshRun(host, command, ms);
   // Same shape the local shell tool returns, so the model reads both alike.
   const head = `exit ${r.code}${r.timedOut ? ` — killed after ${Math.round(ms / 1000)}s` : ''}\n$ ${command}\n`;
-  if (!r.stdout && !r.stderr) return head + '(no output)';
-  return head + (r.stdout ? r.stdout : '') + (r.stderr ? '\n[stderr]\n' + r.stderr : '');
+  const body = (!r.stdout && !r.stderr)
+    ? '(no output)'
+    : (r.stdout ? r.stdout : '') + (r.stderr ? '\n[stderr]\n' + r.stderr : '');
+  // A hint names the likely cause ("key refused", "host key changed") so the
+  // model can suggest the fix instead of retrying blindly.
+  return head + body + (r.hint && r.code !== 0 ? '\nHint: ' + r.hint : '');
 }
 
 /** The executor shape src/main/tools/index.js dispatches on. */
@@ -293,4 +366,4 @@ async function run(name, args, ctx) {
   return handler(args || {}, ctx || {});
 }
 
-module.exports = { sshRun, sshProbe, sshEffectiveConfig, keygenFind, keygenForget, statKey, sshList, sshRead, sshSave, sshTest, expandHome, HANDLERS, run };
+module.exports = { sshRun, sshProbe, sshEffectiveConfig, sshCheckBinary, keygenFind, keygenForget, statKey, sshList, sshRead, sshSave, sshTest, expandHome, HANDLERS, run };

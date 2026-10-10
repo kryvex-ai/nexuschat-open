@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('nexus', {
   getConversation: id => ipcRenderer.invoke('conversations:get', { id }),
   renameConversation: (id, title) => ipcRenderer.invoke('conversations:rename', { id, title }),
   deleteConversation: id => ipcRenderer.invoke('conversations:delete', { id }),
+  setConversationSsh: (id, hostId, path) => ipcRenderer.invoke('conversations:setSsh', { id, hostId, path }),
 
   /* bots (local scheduled task runners) */
   listBots: () => ipcRenderer.invoke('bots:list'),
@@ -69,12 +70,13 @@ contextBridge.exposeInMainWorld('nexus', {
   onToolResult: cb => subscribe('tool:result', cb),
 
   /* ssh (system OpenSSH against hosts saved in Settings) */
-  sshRun: (hostId, command) => ipcRenderer.invoke('ssh:run', { hostId, command }),
+  sshRun: (hostId, command, timeoutMs) => ipcRenderer.invoke('ssh:run', { hostId, command, timeoutMs }),
   sshList: (hostId, path) => ipcRenderer.invoke('ssh:list', { hostId, path }),
   sshRead: (hostId, path) => ipcRenderer.invoke('ssh:read', { hostId, path }),
   sshSave: (hostId, path, name) => ipcRenderer.invoke('ssh:save', { hostId, path, name }),
   sshTest: hostId => ipcRenderer.invoke('ssh:test', { hostId }),
   sshForgetKey: hostId => ipcRenderer.invoke('ssh:forgetKey', { hostId }),
+  sshPrereq: () => ipcRenderer.invoke('ssh:prereq'),
 
   /* data */
   openDataFolder: () => ipcRenderer.invoke('app:dataFolder'),

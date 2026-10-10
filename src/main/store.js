@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { validSkillIds, pluginById } = require('../shared/skills');
-const { sanitizeHosts } = require('../shared/ssh');
+const { sanitizeHosts, sanitizeRemotePath } = require('../shared/ssh');
 
 /** Keep only ids of packs that actually ship with the app (deduped, ordered). */
 function validPluginIds(list) {
@@ -264,6 +264,10 @@ class Store {
       title: (title || 'New chat').slice(0, 80),
       createdAt: now, updatedAt: now,
       providerId: null, model: null,
+      sshHostId: null,   // saved SSH host id this chat works on, or null = this PC
+      sshPath: '',       // remote folder ('' = login home), meaningful only with sshHostId
+      sshOk: null,       // last connection check: true/false/null = never checked
+      sshCheckedAt: null,
       messages: []
     };
     this.conversations.push(conv);
@@ -299,6 +303,26 @@ class Store {
     const conv = this.getConversation(id);
     if (!conv) return null;
     for (const k of ['title', 'providerId', 'model', 'tools']) if (k in patch) conv[k] = patch[k];
+    // Per-chat SSH destination. Host ids are short uid strings; the folder is
+    // an absolute remote path ('' = login home). Anything else is ignored
+    // rather than stored — a corrupt patch must never wedge the chat.
+    if ('sshHostId' in patch) {
+      const v = patch.sshHostId;
+      conv.sshHostId = (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v)) ? v : null;
+      if (conv.sshHostId === null) { conv.sshOk = null; conv.sshCheckedAt = null; }
+    }
+    if ('sshPath' in patch) {
+      const v = typeof patch.sshPath === 'string' ? patch.sshPath.slice(0, 4096) : '';
+      const dir = sanitizeRemotePath(v, { allowHome: true });
+      if (dir !== null) conv.sshPath = dir;
+    }
+    if ('sshOk' in patch) {
+      conv.sshOk = patch.sshOk === true ? true : patch.sshOk === false ? false : null;
+    }
+    if ('sshCheckedAt' in patch) {
+      conv.sshCheckedAt = (typeof patch.sshCheckedAt === 'string' && !Number.isNaN(Date.parse(patch.sshCheckedAt)))
+        ? patch.sshCheckedAt : null;
+    }
     conv.updatedAt = new Date().toISOString();
     this.saveConversations();
     return conv;
@@ -365,6 +389,20 @@ function sanitizeImportedConversation(c) {
   }
   const iso = (v, fallback) => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : fallback);
   const now = new Date().toISOString();
+  // A hand-edited export may carry any ssh fields; keep them only when they
+  // are shaped like the live records, so a hostile backup cannot smuggle a
+  // host string the saved-host rule would refuse.
+  let sshHostId = null;
+  let sshPath = '';
+  let sshOk = null;
+  let sshCheckedAt = null;
+  if (typeof c.sshHostId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(c.sshHostId)) sshHostId = c.sshHostId;
+  if (typeof c.sshPath === 'string') {
+    const dir = sanitizeRemotePath(c.sshPath.slice(0, 4096), { allowHome: true });
+    if (dir !== null) sshPath = dir;
+  }
+  if (c.sshOk === true || c.sshOk === false) sshOk = c.sshOk;
+  if (typeof c.sshCheckedAt === 'string' && !Number.isNaN(Date.parse(c.sshCheckedAt))) sshCheckedAt = c.sshCheckedAt;
   return {
     id: c.id.slice(0, 64),
     title: typeof c.title === 'string' ? c.title.slice(0, 80) : 'Imported chat',
@@ -372,6 +410,7 @@ function sanitizeImportedConversation(c) {
     updatedAt: iso(c.updatedAt, now),
     providerId: typeof c.providerId === 'string' ? c.providerId.slice(0, 64) : null,
     model: typeof c.model === 'string' ? c.model.slice(0, 256) : null,
+    sshHostId, sshPath, sshOk, sshCheckedAt,
     messages: cleanMessages
   };
 }

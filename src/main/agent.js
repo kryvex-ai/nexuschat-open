@@ -11,12 +11,14 @@
  *
  * Hard limits, all of them settings the user can lower:
  *   - maxSteps       — tool rounds per user message (default 12, cap 25)
- *   - one call at a time, in the order the model wrote them
+ *   - reads in one reply run together; writes, deletes, commands and fetches
+ *     run one at a time, in the order the model wrote them
  *   - a stop request (Esc, closing the window) ends the loop at the next step
  *   - the loop ends the moment a reply contains no tool directive
  */
 
 const { manual } = require('../shared/tools');
+const { remoteNote } = require('../shared/ssh');
 const { parseToolCalls, resultsToPrompt } = require('./tools');
 
 const DEFAULT_MAX_STEPS = 12;
@@ -25,8 +27,14 @@ const MAX_STEPS_CAP = 25;
 const TOOL_HISTORY_MAX = 10;
 
 /** The system prompt when tools are on: the user's prompt, skills, then the tool manual. */
-function agentSystemPrompt(basePrompt) {
-  return [basePrompt, manual()].filter(Boolean).join('\n');
+function agentSystemPrompt(basePrompt, remote) {
+  const parts = [basePrompt, manual()];
+  // A connected chat works on the host, not this PC: name it so relative
+  // paths resolve the same way for the model as they do for the executors.
+  if (remote && (remote.hostLabel || remote.path !== undefined)) {
+    parts.push(remoteNote(remote.hostLabel || '?', remote.path || ''));
+  }
+  return parts.filter(Boolean).join('\n');
 }
 
 /**
@@ -78,6 +86,7 @@ async function runAgentTurn({
   streamText,
   conversationId,
   basePrompt = '',
+  remote = null,
   temperature = 0.7,
   maxTokens = null,
   maxSteps = DEFAULT_MAX_STEPS,
@@ -86,7 +95,7 @@ async function runAgentTurn({
   emit = () => {}
 }) {
   const steps = Math.min(MAX_STEPS_CAP, Math.max(1, Math.floor(Number(maxSteps) || DEFAULT_MAX_STEPS)));
-  const system = agentSystemPrompt(basePrompt);
+  const system = agentSystemPrompt(basePrompt, remote);
   let rounds = 0;
   let stopped = false;
   let last = null;

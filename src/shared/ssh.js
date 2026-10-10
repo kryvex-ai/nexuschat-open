@@ -41,12 +41,78 @@ const SSH_LIMITS = {
 
 const HOST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 // No leading "-" (an option in disguise), no spaces, no @ or shell punctuation.
-const HOSTNAME_RE = /^[A-Za-z0-9:][A-Za-z0-9.:_-]{0,252}$/;
+// Colons cover IPv6; brackets are stripped before this test (see normalizeHost).
+// "%" covers RFC 4007 zone ids (fe80::1%eth0).
+const HOSTNAME_RE = /^[A-Za-z0-9:][A-Za-z0-9.:_%-]{0,252}$/;
 const USER_RE = /^[A-Za-z0-9_][A-Za-z0-9._\\-]{0,63}$/;
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 
 function stripControl(s) {
   return String(s == null ? '' : s).replace(CONTROL_RE, '').trim();
+}
+
+/** Strip one pair of surrounding brackets: "[::1]" → "::1". Bare IPv6 stays. */
+function normalizeHost(h) {
+  let s = stripControl(h).toLowerCase();
+  if (s.length > 2 && s.startsWith('[') && s.includes(']')) {
+    const end = s.indexOf(']');
+    const inner = s.slice(1, end);
+    const rest = s.slice(end + 1);
+    // "[::1]" or "[::1]:2222" pasted into the host box — the port half is
+    // handled by parseSshTarget, so only the bracketed address survives here.
+    if (rest === '' || rest.startsWith(':')) s = inner;
+  }
+  return s;
+}
+
+/**
+ * Parse what a person pastes into the host box: "ssh://user@host:port",
+ * "user@host:port", "user@host", "host:port", "[::1]:2222", "user@[::1]:2222".
+ * Returns { host, user, port } with "" / null for the missing halves, or null
+ * when nothing host-shaped survives. Never throws — the form validator owns
+ * the error copy.
+ */
+function parseSshTarget(text) {
+  let s = stripControl(text);
+  if (!s) return null;
+  s = s.replace(/^ssh:\/\//i, '');
+  // user@ part: the last "@" wins so "user@sub@host" still ends somewhere.
+  let user = '';
+  const at = s.lastIndexOf('@');
+  if (at >= 0) {
+    user = s.slice(0, at).trim();
+    s = s.slice(at + 1).trim();
+  }
+  let host = s;
+  let port = null;
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']');
+    if (end > 0) {
+      const inner = host.slice(1, end);
+      const rest = host.slice(end + 1);
+      host = inner;
+      const m = rest.match(/^:(\d{1,5})$/);
+      if (m) port = Math.floor(Number(m[1]));
+      else if (rest !== '') return null;
+    }
+  } else {
+    const colons = (host.match(/:/g) || []).length;
+    if (colons === 1) {
+      const i = host.indexOf(':');
+      const maybePort = host.slice(i + 1);
+      if (/^\d{1,5}$/.test(maybePort)) {
+        port = Math.floor(Number(maybePort));
+        host = host.slice(0, i);
+      }
+    }
+    // Two or more colons with no brackets is a bare IPv6 address — the port
+    // stays empty rather than guessing which colon is a separator.
+  }
+  host = normalizeHost(host);
+  user = stripControl(user);
+  if (!host) return null;
+  if (port !== null && !(Number.isFinite(port) && port >= 1 && port <= 65535)) port = null;
+  return { host, user, port };
 }
 
 /** Stable id for a host that arrived without a usable one. */
@@ -71,7 +137,7 @@ function sanitizeHosts(list) {
   for (let i = 0; i < list.length && out.length < SSH_LIMITS.HOSTS_MAX; i++) {
     const raw = list[i];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-    const host = stripControl(raw.host).toLowerCase();
+    const host = normalizeHost(raw.host);
     if (!HOSTNAME_RE.test(host)) continue;
     let user = stripControl(raw.user || '');
     if (user && !USER_RE.test(user)) user = '';
@@ -85,9 +151,59 @@ function sanitizeHosts(list) {
   return out;
 }
 
+/**
+ * Validate the host form in one place so the renderer and the tests agree.
+ * Accepts the raw field strings; the host box may hold a pasted
+ * "user@host:port" or "ssh://…" target, which is parsed and merged —
+ * explicit user/port boxes win when both are filled.
+ * Returns { ok, errors, clean } where clean is the normalized record
+ * (without id) when ok, else null.
+ */
+function validateHostForm({ label, host, user, port, keyFile } = {}) {
+  const errors = {};
+  let hostText = stripControl(host);
+  let userText = stripControl(user);
+  let portText = stripControl(port);
+  // A pasted target ("deploy@web.example:2222") fills the blanks.
+  if (/(@|:\d{1,5}\s*$|^ssh:\/\/)/i.test(hostText) || hostText.startsWith('[')) {
+    const parsed = parseSshTarget(hostText);
+    if (parsed) {
+      hostText = parsed.host;
+      if (!userText && parsed.user) userText = parsed.user;
+      if (!portText && parsed.port) portText = String(parsed.port);
+    }
+  } else {
+    hostText = normalizeHost(hostText);
+  }
+  if (!hostText) errors.host = 'Enter a host name or IP address.';
+  else if (!HOSTNAME_RE.test(hostText)) errors.host = 'That does not look like a host name or IP address.';
+  if (userText && !USER_RE.test(userText)) errors.user = 'User names use letters, digits, dot, underscore and dash.';
+  let portNum = 22;
+  if (portText) {
+    portNum = Math.floor(Number(portText));
+    if (!Number.isFinite(portNum) || portNum < 1 || portNum > 65535) errors.port = 'Port must be between 1 and 65535.';
+  }
+  const keyText = stripControl(keyFile).slice(0, 512);
+  if (Object.keys(errors).length) return { ok: false, errors, clean: null };
+  return {
+    ok: true,
+    errors,
+    clean: {
+      label: stripControl(label).slice(0, 64) || hostText,
+      host: hostText,
+      user: USER_RE.test(userText) ? userText : '',
+      port: portText ? portNum : 22,
+      keyFile: keyText
+    }
+  };
+}
+
 /** "user@host" or just "host" — the one thing ssh treats as the destination. */
 function targetFor(host) {
-  return host.user ? host.user + '@' + host.host : host.host;
+  const h = String((host && host.host) || '');
+  // Bare IPv6 ("::1") must reach ssh bracketed, or the colons read as separators.
+  const dest = h.includes(':') && !(h.startsWith('[') && h.endsWith(']')) ? '[' + h + ']' : h;
+  return host.user ? host.user + '@' + dest : dest;
 }
 
 /**
@@ -114,15 +230,18 @@ function shQuote(s) {
 /**
  * A directory listing script that works under any POSIX login shell (it is
  * run via `sh -c`, so fish/csh logins are fine). Emits a "C<TAB>resolved-dir"
- * header, then "d<TAB>path" or "f<TAB>path" per entry. Names containing a
- * tab or newline cannot survive this framing — they are dropped by the
- * parser, which is the standard trade-off for a line protocol.
+ * header, then one row per entry: "d<TAB>path<TAB>size<TAB>mtime" or the same
+ * with "f". Size is bytes, mtime is epoch seconds; either may be empty when
+ * the far side has neither GNU nor BSD stat — the parser treats blanks as
+ * unknown rather than failing. Names containing a tab or newline cannot
+ * survive this framing — they are dropped by the parser, which is the
+ * standard trade-off for a line protocol.
  * `path` of ''/null lists the login home via "$HOME" (quoted so a home
  * directory with spaces still globs correctly).
  */
 function remoteListScript(path) {
   const p = path && String(path).trim() ? shQuote(String(path).trim()) : '"$HOME"';
-  return `d=$(cd ${p} 2>/dev/null && pwd) || d=${p}; printf 'C\\t%s\\n' "$d"; for e in ${p}/* ${p}/.[!.]* ${p}/..?*; do [ -e "$e" ] || [ -L "$e" ] || continue; if [ -d "$e" ]; then printf 'd\\t%s\\n' "$e"; else printf 'f\\t%s\\n' "$e"; fi; done`;
+  return `d=$(cd ${p} 2>/dev/null && pwd) || d=${p}; printf 'C\\t%s\\n' "$d"; for e in ${p}/* ${p}/.[!.]* ${p}/..?*; do [ -e "$e" ] || [ -L "$e" ] || continue; if [ -d "$e" ]; then t=d; else t=f; fi; s=$(stat -c '%s %Y' "$e" 2>/dev/null || stat -f '%z %m' "$e" 2>/dev/null || printf ' '); printf '%s\\t%s\\t%s\\n' "$t" "$e" "$s"; done`;
 }
 
 /** The remote command line for a listing: sh is explicit, never the login shell. */
@@ -130,17 +249,37 @@ function remoteListCommand(path) {
   return 'sh -c ' + shQuote(remoteListScript(path));
 }
 
-/** Parse the listing into { name, dir, path }, directories first, then A→Z. */
+/** Parse the listing into { name, dir, path, size, mtime }, directories first, then A→Z. */
 function parseRemoteList(stdout) {
   const out = [];
   for (const line of String(stdout || '').split('\n')) {
     if (line.length < 3 || line[1] !== '\t') continue;
     const type = line[0];
     if (type !== 'd' && type !== 'f') continue;
-    const full = line.slice(2);
+    const parts = line.split('\t');
+    if (parts.length < 2 || parts.length > 4) continue;
+    const full = parts[1];
+    if (!full) continue;
     const name = full.slice(full.lastIndexOf('/') + 1);
     if (!name) continue;
-    out.push({ name, dir: type === 'd', path: full });
+    // Extra columns must be numeric blanks — otherwise the path itself held
+    // a tab and the row is dropped rather than misread (see header comment).
+    let size = null;
+    let mtime = null;
+    if (parts.length >= 3) {
+      const meta = parts.slice(2).join(' ').trim().split(/\s+/).filter(Boolean);
+      // stat prints "size mtime"; an empty stat prints nothing at all.
+      if (meta.length === 0) { /* unknown, stays null */ }
+      else if (meta.length <= 2 && meta.every(x => /^\d+$/.test(x))) {
+        if (meta[0] !== undefined) size = Number(meta[0]);
+        if (meta[1] !== undefined) mtime = Number(meta[1]) * 1000;
+        if (!Number.isFinite(size)) size = null;
+        if (!Number.isFinite(mtime)) mtime = null;
+      } else continue; // a tab inside the file name — drop the row
+    }
+    out.push(size === null && mtime === null
+      ? { name, dir: type === 'd', path: full }
+      : { name, dir: type === 'd', path: full, size, mtime });
   }
   out.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name)));
   return out;
@@ -206,7 +345,10 @@ function hostAlias(host) {
 
 /** known_hosts query: non-default ports use the [host]:port form. */
 function knownHostsQuery(host) {
-  return host.port && host.port !== 22 ? '[' + host.host + ']:' + host.port : host.host;
+  const h = String((host && host.host) || '');
+  const isV6 = h.includes(':');
+  if (host.port && host.port !== 22) return '[' + h + ']:' + host.port;
+  return isV6 ? '[' + h + ']' : h;
 }
 
 /**
@@ -372,11 +514,138 @@ function isProbablyText(buf) {
   return true;
 }
 
+/**
+ * Turn a raw ssh failure into a title plus a next step. Pure, so the runner,
+ * the probe and the file browser all explain the same five failures the same
+ * way. `stderr` is the first-line-trimmed ssh output, `code` its exit status.
+ */
+function describeSshFailure(stderr, { code = null, timedOut = false } = {}) {
+  const text = String(stderr || '');
+  if (timedOut || /timed out|Connection timed out|Operation timed out/i.test(text)) {
+    return { title: 'Timed out', hint: 'The host did not answer in time. Check the address and port, or try again on a better network.' };
+  }
+  if (/REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(text)) {
+    return { title: 'Host key changed', hint: 'The host key no longer matches known_hosts — verify the machine was reinstalled, then use “Forget host key” and reconnect.' };
+  }
+  if (/Host key verification failed/i.test(text)) {
+    return { title: 'Host key not trusted', hint: 'No saved key for this host yet. Run the command or listing once to pin it (trust on first use), or connect once from a terminal you trust.' };
+  }
+  if (/Permission denied \(publickey/i.test(text)) {
+    return { title: 'Key refused', hint: 'The host rejected the key. Check the user, the key file, and that the public key is in the remote authorized_keys.' };
+  }
+  if (/Connection refused/i.test(text)) {
+    return { title: 'Connection refused', hint: 'Nothing listens on that port. Check the port and that sshd runs on the host.' };
+  }
+  if (/Could not resolve hostname|Name or service not known|nodename nor servname/i.test(text)) {
+    return { title: 'Unknown host', hint: 'The name did not resolve. Check the spelling or use the IP address.' };
+  }
+  if (/No route to host|Network is unreachable/i.test(text)) {
+    return { title: 'Host unreachable', hint: 'The network has no route there. Check VPN, firewall and the address.' };
+  }
+  if (/No such file or directory/i.test(text)) {
+    return { title: 'Not found on the host', hint: 'The remote path does not exist. List the parent directory to see what does.' };
+  }
+  if (/port 22: Connection|ssh: connect to host/i.test(text)) {
+    return { title: 'Cannot reach the host', hint: firstLine(text) || ('Connection failed (exit ' + code + ').') };
+  }
+  return { title: '', hint: '' };
+}
+
+/** "1536" → "1.5 KB": file sizes in the browser without a dependency. */
+function formatBytes(n) {
+  if (n === null || n === undefined) return '';
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 0) return '';
+  if (v < 1024) return v + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let x = v / 1024;
+  let u = 0;
+  while (x >= 1024 && u < units.length - 1) { x /= 1024; u++; }
+  return (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10) + ' ' + units[u];
+}
+
+/** Epoch millis → "2026-03-14 09:41" in UTC, "" when unknown. */
+function formatMtime(ms) {
+  const v = Number(ms);
+  if (!Number.isFinite(v) || v <= 0) return '';
+  try {
+    return new Date(v).toISOString().slice(0, 16).replace('T', ' ');
+  } catch { return ''; }
+}
+
+/* ---------------- per-chat remote workspace ---------------- */
+
+/**
+ * POSIX join of a remote base and a model-supplied relative path.
+ * Base is absolute ("/home/deploy/app") or "" (login home). Returns the
+ * absolute remote path, or null when the input escapes, is absolute, or
+ * carries control bytes. Mirrors the local resolvePath confinement rule:
+ * ".." cannot climb above the base, and absolute tool paths are rejected —
+ * the model works relative to the connected folder, never "/" itself.
+ */
+function resolveRemote(base, p) {
+  const raw = String(p == null ? '' : p).trim();
+  if (!raw || raw.includes('\0')) return null;
+  if (raw.startsWith('/') || /^[A-Za-z]:[\\/]/.test(raw) || raw.startsWith('~')) return null;
+  const b = String(base == null ? '' : base).trim();
+  if (b && (!b.startsWith('/') || CONTROL_RE.test(b) || b.length > SSH_LIMITS.PATH_MAX)) return null;
+  const parts = (b + '/' + raw).split('/');
+  const stack = [];
+  for (const seg of parts) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') {
+      if (!stack.length) return null;
+      stack.pop();
+      continue;
+    }
+    if (CONTROL_RE.test(seg)) return null;
+    stack.push(seg);
+  }
+  const abs = '/' + stack.join('/');
+  if (abs.length > SSH_LIMITS.PATH_MAX) return null;
+  // Stay under the base: "a/../../etc" normalizes away from it.
+  if (b && b !== '/' && !(abs === b || abs.startsWith(b.endsWith('/') ? b : b + '/'))) return null;
+  return abs;
+}
+
+/** Top path segment, for the ".git writes go to git tools" rule. */
+function remoteTop(abs) {
+  return String(abs || '').split('/').filter(Boolean)[0] || '';
+}
+
+/**
+ * Validate a conversation-level SSH destination before it is stored.
+ * Returns { ok, clean } with clean { hostId, path } — path "" means the
+ * login home, exactly like the file browser.
+ */
+function sanitizeSshDestination({ hostId, path } = {}) {
+  if (hostId === null || hostId === undefined || hostId === '') return { ok: true, clean: { hostId: null, path: '' } };
+  const id = String(hostId);
+  if (!HOST_ID_RE.test(id)) return { ok: false, error: 'Unknown SSH host.' };
+  const dir = sanitizeRemotePath(path, { allowHome: true });
+  if (dir === null) return { ok: false, error: 'Remote folder must be an absolute path.' };
+  return { ok: true, clean: { hostId: id, path: dir } };
+}
+
+/**
+ * The system-prompt note appended when a chat works on a remote folder.
+ * Names the host and folder so relative paths resolve the same way for the
+ * model as they do for the executors.
+ */
+function remoteNote(hostLabel, remotePath) {
+  const where = remotePath ? String(remotePath) : 'its login home directory';
+  return 'Remote workspace: you are working on SSH host "' + String(hostLabel || '?').slice(0, 64)
+    + '" in ' + where + '. Every file, search, git and shell tool runs THERE, not on this PC.'
+    + ' Paths are relative to that folder. Never guess a path you have not listed or read there.';
+}
+
 module.exports = {
   SSH_LIMITS,
-  sanitizeHosts, targetFor, buildSshArgs, shQuote,
+  sanitizeHosts, validateHostForm, parseSshTarget, normalizeHost, targetFor, buildSshArgs, shQuote,
   remoteListScript, remoteListCommand, parseRemoteList, parseListDir, remoteReadCommand,
   sanitizeRemotePath, sanitizeCommand, sanitizeSaveName, uniqueSaveName,
   hostAlias, knownHostsQuery, parseSshG, listVal, csvVal, firstLine,
+  describeSshFailure, formatBytes, formatMtime,
+  resolveRemote, remoteTop, sanitizeSshDestination, remoteNote,
   auditSsh, sshConfigBlock, isProbablyText
 };

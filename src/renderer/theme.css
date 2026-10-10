@@ -2036,6 +2036,46 @@ input[type=range]:focus-visible { outline: 2px solid var(--focus); outline-offse
 .ssh-score.warn { background: var(--warn); border-color: transparent; color: var(--on-warn); }
 .ssh-score.bad { background: var(--danger); border-color: transparent; color: var(--on-danger); }
 
+/* SSH additions: form errors, breadcrumbs, file meta, host status. */
+.ssh-host-row .ssh-score { margin-left: auto; font-size: 11px; padding: 0 7px; }
+#sshFormError { color: var(--danger); min-height: 1em; }
+#sshFormTitle { font-weight: 600; }
+.ssh-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 4px 0; font-family: var(--font-mono); font-size: 12px; }
+.ssh-crumb { border: 1px solid transparent; background: transparent; color: var(--text-2); border-radius: var(--radius); padding: 1px 6px; cursor: pointer; font: inherit; }
+.ssh-crumb:hover { background: var(--hover-bg); color: var(--text); }
+.ssh-crumb.on { color: var(--text); cursor: default; }
+.ssh-crumb:disabled { cursor: default; }
+.ssh-crumb-sep { color: var(--muted); }
+.ssh-file-row .ssh-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-file-row .ssh-file-meta { margin-left: auto; padding-left: 10px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ssh-file-row.hidden { display: none; }
+#sshPrereqLine:empty, #sshEffective:empty, #sshCrumbs:empty { display: none; }
+
+/* Chat SSH destination: the bar under the chat header. */
+.ssh-dest-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-soft);
+  font-size: 12.5px;
+}
+.ssh-dest-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.ssh-dest-dot.on { background: var(--good); }
+.ssh-dest-dot.warn { background: var(--warn); }
+.ssh-dest-dot.bad { background: var(--danger); }
+.ssh-dest-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-dest-btn { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+#sshDestError:empty { display: none; }
+#sshDestError { color: var(--danger); min-height: 1em; }
+
 /* ======================================================================== */
 /* Assistant tools                                                          */
 /* ======================================================================== */
