@@ -264,7 +264,7 @@ test('the chat bar, picker and bridge exist on every side', () => {
   const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'src/renderer/theme.css'), 'utf8');
   const ipc = fs.readFileSync(path.join(root, 'src/main/ipc.js'), 'utf8');
-  for (const id of ['sshDestBar', 'sshDestDot', 'sshDestText', 'sshDestBtn',
+  for (const id of ['sshDestBar', 'sshDestDot', 'sshDestBadge', 'sshDestText', 'sshDestBtn',
     'sshDestModal', 'sshDestModalTitle', 'sshDestHost', 'sshDestPath',
     'sshDestError', 'sshDestConnectBtn', 'sshDestDisconnectBtn', 'sshDestCancelBtn']) {
     assert.ok(html.includes('id="' + id + '"'), 'missing #' + id);
@@ -274,6 +274,15 @@ test('the chat bar, picker and bridge exist on every side', () => {
   assert.ok(appJs.includes('nexus.setConversationSsh'), 'renderer connects through the bridge');
   assert.ok(appJs.includes('Tools on · SSH'), 'toggle names the remote mode');
   assert.ok(css.includes('.ssh-dest-bar') && css.includes('.ssh-dest-dot'), 'bar styled');
+  assert.ok(css.includes('.ssh-dest-badge'), 'the identity badge is styled');
+  assert.ok(css.includes('.ssh-dest-dot.checking'), 'the checking state is styled');
+  assert.ok(appJs.includes('verifySshDest') && appJs.includes('sshLiveByConv'), 'the pill verifies reachability, not just stored state');
+  // The status lives under the composer — badge, name, "/" location — not as a top strip.
+  const barAt = html.indexOf('id="sshDestBar"');
+  assert.ok(barAt > html.indexOf('id="sendBtn"'), 'below the composer box');
+  assert.ok(barAt < html.indexOf('<!-- BOTS -->'), 'still inside the chat view');
+  assert.ok(html.includes('id="sshDestBtn" type="button" class="ghost ssh-dest-btn">This PC'), 'names This PC by default');
+  assert.ok(html.indexOf('id="chatHeader"') < html.indexOf('id="messages"'), 'header still above messages');
   for (const id of ['sshDestHost', 'sshDestPath']) {
     assert.ok(html.includes('for="' + id + '"'), 'no label for #' + id);
   }

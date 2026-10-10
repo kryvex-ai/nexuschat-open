@@ -1,11 +1,13 @@
 name: Release
 
 # Builds the Windows installer and portable exe on real Windows (no wine needed)
-# and attaches them to a GitHub Release. Trigger: push a tag like v1.0.0.
+# and attaches them to a GitHub Release. Trigger: push a tag like v1.0.0 — or
+# a beta tag like 0.0.1-beta-0.2, which builds the same way so testers can try
+# it (the in-app updater only ever offers stable v-tags, never betas).
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', '*-beta-*']
   workflow_dispatch:
 
 permissions:
@@ -59,7 +61,7 @@ jobs:
             dist/SHA256SUMS.txt
 
       - name: Attach to GitHub Release (tag pushes only)
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || contains(github.ref, '-beta-')
         uses: softprops/action-gh-release@v2
         with:
           files: |

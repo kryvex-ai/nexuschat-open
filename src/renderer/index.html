@@ -49,11 +49,6 @@
           <span class="status-chip"><span id="chatStatus" class="muted"></span></span>
           <button type="button" class="help-btn" data-help="chat" title="Chat and models" aria-label="Chat and models">?</button>
         </div>
-        <div id="sshDestBar" class="ssh-dest-bar" aria-live="polite">
-          <span id="sshDestDot" class="ssh-dest-dot" aria-hidden="true"></span>
-          <span id="sshDestText" class="ssh-dest-text muted">This PC</span>
-          <button id="sshDestBtn" type="button" class="ghost ssh-dest-btn">Connect</button>
-        </div>
         <div id="messages" tabindex="0" aria-busy="false"></div>
         <div id="chatAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
         <div id="composer">
@@ -85,6 +80,13 @@
               <button id="sendBtn" class="primary">Send</button>
             </div>
           </div>
+        </div>
+        <div id="sshDestBar" class="ssh-dest-bar" aria-live="polite">
+          <span id="sshDestDot" class="ssh-dest-dot" aria-hidden="true"></span>
+          <span id="sshDestBadge" class="ssh-dest-badge" aria-hidden="true">⌂</span>
+          <button id="sshDestBtn" type="button" class="ghost ssh-dest-btn">This PC ▾</button>
+          <span class="ssh-dest-sep" aria-hidden="true">/</span>
+          <span id="sshDestText" class="ssh-dest-text muted">local workspace</span>
         </div>
       </section>
     </section>

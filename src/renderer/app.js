@@ -1905,6 +1905,7 @@ async function loadAgent() {
   }
   renderAgent();
   updateToolsToggle();
+  renderSshDest(lastDestConv); // the line under the composer shows the workspace
 }
 
 function renderAgent() {
@@ -1983,12 +1984,19 @@ function updateToolsToggle(conv) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Chat SSH destination — the bar under the chat header                 */
+/* Chat SSH destination — a cluster in the composer, under the input   */
 /* ------------------------------------------------------------------ */
 
 /* Hosts live in settings; the chat only stores the id + folder. Resolve
  * here for display, so a host renamed in Settings renames itself in chats. */
 let lastDestConv = null;
+/* Live reachability per chat: convId -> { ok, at }. A stored destination is
+ * only a claim until a listing proves the host answers — the pill shows
+ * Checking… then flips to Connected or Not reached. Entries live 60s so
+ * opening a chat does not probe on every repaint. */
+let sshLiveByConv = {};
+let sshVerifying = {};
+const SSH_LIVE_TTL_MS = 60000;
 
 function sshDestFor(conv) {
   if (!conv || !conv.sshHostId) return null;
@@ -1998,46 +2006,113 @@ function sshDestFor(conv) {
   return { host, base: conv.sshPath || '' };
 }
 
-/** The bar under the chat: where this chat works, and whether it is live. */
+function sshCheckFresh(atMs) {
+  return Number.isFinite(atMs) && (Date.now() - atMs < SSH_LIVE_TTL_MS);
+}
+
+/** A stored check counts only while fresh — otherwise the host is reasked. */
+function sshStoredFresh(conv) {
+  if (!conv || conv.sshOk !== true || !conv.sshCheckedAt) return false;
+  const at = Date.parse(conv.sshCheckedAt);
+  return sshCheckFresh(at);
+}
+
+/** The line under the composer: badge, name, then where the chat works. */
 function renderSshDest(conv) {
   lastDestConv = conv || null;
   const dot = $('#sshDestDot');
-  const text = $('#sshDestText');
+  const badge = $('#sshDestBadge');
   const btn = $('#sshDestBtn');
-  if (!dot || !text || !btn) return;
+  const loc = $('#sshDestText');
+  if (!dot || !badge || !btn || !loc) return;
+  // One painter for every state, so the line never half-updates: dot class,
+  // badge mark, button name, location text, and what the button explains.
+  const paint = (cls, mark, name, where, opts = {}) => {
+    dot.className = 'ssh-dest-dot' + (cls ? ' ' + cls : '');
+    badge.textContent = mark;
+    btn.textContent = name + ' ▾';
+    btn.disabled = opts.disabled === true;
+    btn.title = opts.controlTitle || 'Attach this chat to a saved SSH host, or detach it.';
+    loc.textContent = where;
+    loc.title = opts.whereTitle || where;
+  };
+  const localWhere = sshLocalWhere();
   if (!conv) {
-    dot.className = 'ssh-dest-dot';
-    text.textContent = 'This PC';
-    btn.textContent = 'Connect';
-    btn.disabled = true;
-    btn.title = 'Start a chat first, then attach it to a host.';
+    paint('', '⌂', 'This PC', localWhere || 'no workspace folder',
+      { disabled: true, controlTitle: 'Start a chat first, then attach it to a host.' });
     return;
   }
-  btn.disabled = false;
-  btn.title = 'Attach this chat to a saved SSH host, or detach it.';
   const dest = sshDestFor(conv);
   if (!dest) {
-    dot.className = 'ssh-dest-dot';
-    text.textContent = 'This PC — tools run in the local workspace';
-    btn.textContent = 'Connect';
+    paint('', '⌂', 'This PC', localWhere || 'no workspace folder');
     return;
   }
   if (!dest.host) {
-    dot.className = 'ssh-dest-dot warn';
-    text.textContent = 'Host removed — pick again';
-    btn.textContent = 'Reconnect';
+    paint('warn', '?', 'Choose host', 'saved host removed — pick again');
     return;
   }
   const label = dest.host.label || dest.host.host;
-  const folder = dest.base || '(login home)';
-  if (conv.sshOk === false) {
-    dot.className = 'ssh-dest-dot bad';
-    text.textContent = label + ' — ' + folder + ' · not reached';
-  } else {
-    dot.className = 'ssh-dest-dot on';
-    text.textContent = 'Connected: ' + label + ' — ' + folder;
+  const folder = dest.base || '~';
+  const mark = sshBadgeInitial(label);
+  const live = sshLiveByConv[conv.id];
+  if (live && sshCheckFresh(live.at)) {
+    paint(live.ok ? 'on' : 'bad', mark, label, live.ok ? folder : folder + ' · not reached');
+    return;
   }
-  btn.textContent = 'Change';
+  if (sshStoredFresh(conv)) {
+    paint('on', mark, label, folder);
+    return;
+  }
+  paint('checking', mark, label, folder + ' · checking…');
+  verifySshDest(conv);
+}
+
+/** First alphanumeric of a label, uppercased — the badge mark. */
+function sshBadgeInitial(label) {
+  const m = String(label || '').match(/[A-Za-z0-9]/);
+  return m ? m[0].toUpperCase() : '?';
+}
+
+/** Where local tools run: the validated workspace, if one is set. */
+function sshLocalWhere() {
+  const w = (agentState && agentState.workspace)
+    || (state && state.settings && state.settings.agent && state.settings.agent.workspace)
+    || '';
+  return String(w || '');
+}
+
+/**
+ * Prove the host answers by listing the folder through the same channel
+ * Connect uses — reusing setSsh refreshes the stored check on success and
+ * leaves it alone on failure (the pill still says Not reached). Silent by
+ * design: the pill is the whole report.
+ */
+async function verifySshDest(conv) {
+  if (!conv || !conv.id || !conv.sshHostId) return;
+  if (sshVerifying[conv.id]) return;
+  sshVerifying[conv.id] = true;
+  try {
+    const r = await nexus.setConversationSsh(conv.id, conv.sshHostId, conv.sshPath || '');
+    sshLiveByConv[conv.id] = { ok: !!(r && r.ok), at: Date.now() };
+    if (r && r.ok && currentConvId === conv.id) {
+      // Stored sshOk/checkedAt are fresh now — repaint from the record so
+      // the next open trusts it without probing again.
+      const fresh = await nexus.getConversation(conv.id).catch(() => null);
+      if (fresh && currentConvId === conv.id) {
+        renderSshDest(fresh);
+        updateToolsToggle(fresh);
+        return;
+      }
+    }
+  } catch {
+    sshLiveByConv[conv.id] = { ok: false, at: Date.now() };
+  } finally {
+    delete sshVerifying[conv.id];
+  }
+  if (currentConvId === conv.id) {
+    const c = (lastDestConv && lastDestConv.id === conv.id) ? lastDestConv : conv;
+    renderSshDest(c);
+  }
 }
 
 function openSshDest() {
@@ -2097,6 +2172,7 @@ async function connectSshDest() {
       return;
     }
     closeSshDest();
+    sshLiveByConv[currentConvId] = { ok: true, at: Date.now() };
     await refreshConversations();
     await renderMessages();
     toast('Connected — tools will run there when they are on.', 'ok');
@@ -2112,6 +2188,7 @@ async function disconnectSshDest() {
   try {
     const r = await nexus.setConversationSsh(currentConvId, null, '');
     if (!r || !r.ok) { toast((r && r.error) || 'Could not detach.', 'error'); return; }
+    delete sshLiveByConv[currentConvId];
     closeSshDest();
     await refreshConversations();
     await renderMessages();
@@ -3475,7 +3552,7 @@ const HELP_TOPICS = [
     lead: 'Every conversation runs on a model you pick, with a key you own.',
     bullets: [
       'New chat starts a fresh conversation. The sidebar keeps every chat and removes one with its ✕ button.',
-      'The bar under the chat names where it works: This PC, or Connected to a saved host and folder. Connect attaches the chat; tools then run on that host when they are on.',
+      'Under the composer, one line names where the chat works — This PC or a saved host, then the folder. Green means the host just answered. Connect attaches the chat; tools then run on that host when they are on.',
       'The picker above the composer opens a searchable list of every model you have set up — type a few letters, move with the arrow keys, press Enter to choose. The header line above the chat always shows who is answering.',
       'The refresh button next to it re-reads the list whenever a provider adds new models.',
       'Regenerate replays the last answer; Stop cuts a reply short while it is still streaming.',
@@ -3610,7 +3687,7 @@ const HELP_TOPICS = [
     lead: 'Settings → SSH runs commands and reads files on machines you already reach with ssh — and the assistant can too, through its SSH tool.',
     bullets: [
       'Save a host (name, user, port, optional key file). The host box also takes user@host:port or ssh://user@host:port pastes. Only saved hosts are reachable — the assistant is asked before every call and can never type a host of its own.',
-      'The bar under each chat attaches it to a saved host and folder; the runner, browser and self-test here are where hosts are added and checked.',
+      'The line under each chat composer attaches it to a saved host and folder, and shows whether the host answers; the runner, browser and self-test here are where hosts are added and checked.',
       'The runner executes a command with your own ssh settings — your agent, keys and ~/.ssh/config all apply. Pick a timeout, recall past commands with Up/Down, and copy or clear the output. Output and exit status come back under the command with a hint when it fails.',
       'Browse lists a remote directory with sizes and dates; filter narrows it, breadcrumbs and Home/Up move around. Preview reads a file (binary files are detected, not dumped); Save to workspace copies it over with a size cap.',
       'Run self-test scores the connection 0–100 from the effective config, your known_hosts, key permissions and one read-only probe, and prints a Host block you can paste into ~/.ssh/config. The score stays on the host row.',
