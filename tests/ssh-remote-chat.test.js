@@ -277,6 +277,8 @@ test('the chat bar, picker and bridge exist on every side', () => {
   assert.ok(css.includes('.ssh-dest-badge'), 'the identity badge is styled');
   assert.ok(css.includes('.ssh-dest-dot.checking'), 'the checking state is styled');
   assert.ok(appJs.includes('verifySshDest') && appJs.includes('sshLiveByConv'), 'the pill verifies reachability, not just stored state');
+  assert.ok(appJs.includes('await newChat()'), 'Connect starts a chat instead of greying out');
+  assert.ok(!appJs.includes('Start a chat first'), 'no dead-end toast left behind');
   // The status lives under the composer — badge, name, "/" location — not as a top strip.
   const barAt = html.indexOf('id="sshDestBar"');
   assert.ok(barAt > html.indexOf('id="sendBtn"'), 'below the composer box');

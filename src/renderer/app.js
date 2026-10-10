@@ -2038,8 +2038,8 @@ function renderSshDest(conv) {
   };
   const localWhere = sshLocalWhere();
   if (!conv) {
-    paint('', '⌂', 'This PC', localWhere || 'no workspace folder',
-      { disabled: true, controlTitle: 'Start a chat first, then attach it to a host.' });
+    // No dead end: the button below always works — it starts the chat first.
+    paint('', '⌂', 'This PC', localWhere || 'no workspace folder');
     return;
   }
   const dest = sshDestFor(conv);
@@ -2115,8 +2115,17 @@ async function verifySshDest(conv) {
   }
 }
 
-function openSshDest() {
-  if (!currentConvId) { toast('Start a chat first, then attach it to a host.', 'info'); return; }
+async function openSshDest() {
+  if (!currentConvId) {
+    // Attaching needs a chat to attach to — start one instead of greying out.
+    try {
+      await newChat();
+    } catch (e) {
+      toast('Could not start a chat: ' + ((e && e.message) || e), 'error');
+      return;
+    }
+    if (!currentConvId) return;
+  }
   const sel = $('#sshDestHost');
   const pathInput = $('#sshDestPath');
   const err = $('#sshDestError');
